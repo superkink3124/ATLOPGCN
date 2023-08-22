@@ -1,0 +1,9 @@
+.idea
+**/__pycache__/
+**/log.txt
+**/*.ipynb
+data/prepared_data/**/*.pkl
+data/prepared_data/**/*.json
+data/cdr
+src/experiments
+src/debug
