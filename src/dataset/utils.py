@@ -1,5 +1,5 @@
 from tqdm import tqdm
-
+from typing import List, Any
 
 cdr_rel2id = {'1:NR:2': 0, '1:CID:2': 1}
 
@@ -32,38 +32,52 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
 
                 entity_pos = set()
                 for p in prs:
+                    # print(p)
                     es = list(map(int, p[8].split(':')))
                     ed = list(map(int, p[9].split(':')))
                     tpy = p[7]
+                    # print(es)
+                    # print(ed)
                     for start, end in zip(es, ed):
                         entity_pos.add((start, end, tpy))
+                        # print((start, end, tpy))
 
                     es = list(map(int, p[14].split(':')))
                     ed = list(map(int, p[15].split(':')))
                     tpy = p[13]
+                    # print(es)
+                    # print(ed)
                     for start, end in zip(es, ed):
                         entity_pos.add((start, end, tpy))
+                        # print((start, end, tpy))
+                    # print('\n\n')
 
                 sents = [t.split(' ') for t in text.split('|')]
                 new_sents = []
                 sent_map = {}
+                sent_pos = []
                 i_t = 0
                 for sent in sents:
+                    start_sent = len(new_sents)
+                    new_sents.append('<SENT>')
                     for token in sent:
+                        # print(i_t, token)
                         tokens_wordpiece = tokenizer.tokenize(token)
                         for start, end, tpy in list(entity_pos):
                             if i_t == start:
-                                tokens_wordpiece = ["*"] + tokens_wordpiece
+                                tokens_wordpiece = ["<ENTITY>"] + tokens_wordpiece
                             if i_t + 1 == end:
-                                tokens_wordpiece = tokens_wordpiece + ["*"]
+                                tokens_wordpiece = tokens_wordpiece + ["</ENTITY>"]
+                        # print(new_sents)
                         sent_map[i_t] = len(new_sents)
                         new_sents.extend(tokens_wordpiece)
                         i_t += 1
+                    end_sent = len(new_sents)
+                    sent_pos.append((start_sent, end_sent))
                     sent_map[i_t] = len(new_sents)
+                    new_sents.append('</SENT>')
                 sents = new_sents
-
                 entity_pos = []
-
                 for p in prs:
                     if p[0] == "not_include":
                         continue
@@ -75,6 +89,7 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                         t_id, h_id = p[5], p[11]
                         t_start, h_start = p[8], p[14]
                         t_end, h_end = p[9], p[15]
+                    # print(h_id, t_id, h_start, t_start, h_end, t_end)
                     h_start = map(int, h_start.split(':'))
                     h_end = map(int, h_end.split(':'))
                     t_start = map(int, t_start.split(':'))
@@ -96,12 +111,13 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                         train_triples[(h_id, t_id)] = [{'relation': r}]
                     else:
                         train_triples[(h_id, t_id)].append({'relation': r})
-
+                # print(ent2idx)
                 relations, hts = [], []
                 for h, t in train_triples.keys():
                     relation = [0] * len(cdr_rel2id)
                     for mention in train_triples[h, t]:
                         relation[mention["relation"]] = 1
+                    # print(h, t, rel)
                     relations.append(relation)
                     hts.append([h, t])
 
@@ -116,75 +132,10 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                            'labels': relations,
                            'hts': hts,
                            'title': pmid,
+                           'sent_pos': sent_pos
                            }
                 features.append(feature)
+            return None
     print("Number of documents: {}.".format(len(features)))
     print("Max document length: {}.".format(maxlen))
     return features
-
-
-# def pad_sequences(list_token_ids: Tuple[List[List[int]], ...],
-#                   max_num_sents,
-#                   max_sent_length, pad_idx) -> Tuple[Tensor, Tensor]:
-#     batch_size = len(list_token_ids)
-#     padded_seq_mask: List[List[List[int]]] = [[[0 for _ in range(max_sent_length)]
-#                                                for _ in range(max_num_sents)]
-#                                               for _ in range(batch_size)]
-#     padded_token_ids: List[List[List[int]]] = [[] for _ in range(batch_size)]
-#
-#     for batch_id, list_sent in enumerate(list_token_ids):
-#         for sent_id, sent in enumerate(list_sent):
-#             for i in range(len(sent)):
-#                 padded_seq_mask[batch_id][sent_id][i] = 1
-#             padded_token_ids[batch_id].append([token for token in sent])
-#             padded_token_ids[batch_id][-1].extend([pad_idx
-#                                                         for _ in range(max_sent_length - len(sent))])
-#
-#         if len(list_sent) < max_num_sents:
-#             padded_token_ids[batch_id].extend([[pad_idx for _ in range(max_sent_length)]
-#                                                     for _ in range(max_num_sents - len(list_sent))])
-#
-#     padded_token_ids: Tensor = torch.tensor(padded_token_ids)
-#     padded_seq_mask: Tensor = torch.tensor(padded_seq_mask)
-#     return padded_token_ids, padded_seq_mask
-#
-#
-# def pad_characters(list_char_ids: Tuple[List[List[List[int]]], ...],
-#                    max_num_sents,
-#                    max_sent_length,
-#                    max_char_length,
-#                    pad_idx):
-#     raise NotImplementedError()
-#
-#
-# def get_cdr_dataset(corpus: CDRCorpus, saved_folder_path: str, data_type: str):
-#     (
-#         dict_token_ids,
-#         dict_pos_ids,
-#         dict_char_ids,
-#         dict_sent_list,
-#         dict_entity_mapping,
-#         ner_labels,
-#         labels
-#     ) = corpus.load_all_features_for_one_dataset(saved_folder_path, data_type)
-#     dataset = CDRDataset(dict_token_ids,
-#                          dict_pos_ids,
-#                          dict_char_ids,
-#                          dict_sent_list,
-#                          dict_entity_mapping,
-#                          ner_labels,
-#                          labels)
-#     return dataset
-#
-#
-# def concat_dataset(datasets: List[CDRDataset]):
-#     res = CDRDataset(
-#         {k: v for dataset in datasets for k, v in dataset.dict_token_ids.items()},
-#         {k: v for dataset in datasets for k, v in dataset.dict_pos_ids.items()},
-#         {k: v for dataset in datasets for k, v in dataset.dict_char_ids.items()},
-#         {k: v for dataset in datasets for k, v in dataset.dict_sent_list.items()},
-#         {k: v for dataset in datasets for k, v in dataset.dict_entity_mapping.items()},
-#         {k: v for dataset in datasets for k, v in dataset.ner_labels.items()},
-#         [label for dataset in datasets for label in dataset.labels],
-#     )
-#     return res

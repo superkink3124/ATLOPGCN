@@ -3,7 +3,7 @@ from .graph_builder_utils import get_mention_to_sentence_edges, get_entity_to_se
     get_mention_to_entity_edges, get_sentence_to_sentence_edges, \
     get_mention_to_mention_edges
 import torch
-from typing import Dict, List, Tuple
+
 
 class GraphBuilder:
     def __init__(self,
@@ -12,21 +12,22 @@ class GraphBuilder:
         self.create_undirected_edges = create_undirected_edges
         self.add_self_edge = add_self_edge
 
-    def create_graph(self, num_mention, num_entity, num_sent,
-                     list_mention_idx: List[Dict[Tuple[str, int, Tuple[int, ...]], int]],
-                     list_entity_idx: List[Dict[str, int]],
-                     list_sent_list: Tuple[List[Tuple[int, int]], ...]):
-        mention_to_mention_edges = get_mention_to_mention_edges(num_mention, list_mention_idx)
-        sentence_to_sentence_edges = get_sentence_to_sentence_edges(num_sent, list_sent_list)
+    def create_graph(self, batch_entity_pos, batch_sent_pos):
+        num_mention = max([sum([len(ent_pos) for ent_pos in entity_pos]) for entity_pos in batch_entity_pos])
+        num_entity = max([len(entity_pos) for entity_pos in batch_entity_pos])
+        num_sent = max([len(sent_pos) for sent_pos in batch_sent_pos])
+
+        mention_to_mention_edges = get_mention_to_mention_edges(num_mention, batch_entity_pos)
+        sentence_to_sentence_edges = get_sentence_to_sentence_edges(num_sent, batch_sent_pos)
         mention_to_sentence_edges = get_mention_to_sentence_edges(num_mention, num_sent,
-                                                                  list_mention_idx)
-        mention_to_entity_edges = get_mention_to_entity_edges(num_mention, num_entity, list_mention_idx,
-                                                              list_entity_idx)
+                                                                  batch_sent_pos, batch_entity_pos)
+        mention_to_entity_edges = get_mention_to_entity_edges(num_mention, num_entity,
+                                                              batch_entity_pos)
         entity_to_sentence_edges = get_entity_to_sentence_edges(num_entity, num_sent,
-                                                                list_mention_idx, list_entity_idx)
+                                                                batch_sent_pos, batch_entity_pos)
         u = []
         v = []
-        batch_size = len(list_sent_list)
+        batch_size = len(batch_entity_pos)
 
         def get_new_entity_id(origin_entity_id):
             return num_mention * batch_size + origin_entity_id
