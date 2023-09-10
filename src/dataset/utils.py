@@ -135,7 +135,6 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                            'sent_pos': sent_pos
                            }
                 features.append(feature)
-            return None
     print("Number of documents: {}.".format(len(features)))
     print("Max document length: {}.".format(maxlen))
     return features

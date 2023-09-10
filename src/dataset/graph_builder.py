@@ -71,7 +71,6 @@ class GraphBuilder:
 
         for edge_id in range(len(u)):
             assert u[edge_id] != v[edge_id], f"Exist self edge {u[edge_id]} to {v[edge_id]}"
-
         graph = dgl.graph((torch.tensor(u), torch.tensor(v)), num_nodes=(num_mention * batch_size +
                                                                          num_entity * batch_size +
                                                                          num_sent * batch_size))
