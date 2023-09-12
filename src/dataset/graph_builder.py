@@ -76,4 +76,4 @@ class GraphBuilder:
                                                                          num_sent * batch_size))
         if self.add_self_edge:
             graph = dgl.add_self_loop(graph)
-        return graph
+        return graph, num_mention, num_entity, num_sent

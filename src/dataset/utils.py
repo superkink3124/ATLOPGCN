@@ -59,15 +59,15 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                 i_t = 0
                 for sent in sents:
                     start_sent = len(new_sents)
-                    new_sents.append('<SENT>')
+                    new_sents.append('[SENT]')
                     for token in sent:
                         # print(i_t, token)
                         tokens_wordpiece = tokenizer.tokenize(token)
                         for start, end, tpy in list(entity_pos):
                             if i_t == start:
-                                tokens_wordpiece = ["<ENTITY>"] + tokens_wordpiece
+                                tokens_wordpiece = ["[ENTITY]"] + tokens_wordpiece
                             if i_t + 1 == end:
-                                tokens_wordpiece = tokens_wordpiece + ["</ENTITY>"]
+                                tokens_wordpiece = tokens_wordpiece + ["[/ENTITY]"]
                         # print(new_sents)
                         sent_map[i_t] = len(new_sents)
                         new_sents.extend(tokens_wordpiece)
@@ -75,7 +75,7 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                     end_sent = len(new_sents)
                     sent_pos.append((start_sent, end_sent))
                     sent_map[i_t] = len(new_sents)
-                    new_sents.append('</SENT>')
+                    new_sents.append('[/SENT]')
                 sents = new_sents
                 entity_pos = []
                 for p in prs:
@@ -125,7 +125,6 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
             sents = sents[:max_seq_length - 2]
             input_ids = tokenizer.convert_tokens_to_ids(sents)
             input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
-
             if len(hts) > 0:
                 feature = {'input_ids': input_ids,
                            'entity_pos': entity_pos,

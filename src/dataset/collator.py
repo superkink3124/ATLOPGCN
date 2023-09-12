@@ -15,9 +15,9 @@ def collate_fn(batch):
     hts = [f["hts"] for f in batch]
     input_ids = torch.tensor(input_ids, dtype=torch.long)
     input_mask = torch.tensor(input_mask, dtype=torch.float)
-    graph = graph_builder.create_graph(entity_pos, sent_pos)
+    graph, num_mention, num_entity, num_sent = graph_builder.create_graph(entity_pos, sent_pos)
     output = (input_ids, input_mask,
               entity_pos, sent_pos,
-              graph,
+              graph, num_mention, num_entity, num_sent,
               labels, hts)
     return output
