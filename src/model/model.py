@@ -1,28 +1,36 @@
 import torch
 from torch import nn
-from .utils import process_long_input
+
+from config.model_config import ModelConfig
+from model.utils import process_long_input
+from model.GNN import GNN
+from opt_einsum import contract
+from model.losses import ATLoss
 
 
 class ATLOPGCN(nn.Module):
-    def __init__(self, config, bert_model, emb_size=768, block_size=64, num_labels=2,
-                 node_type_embedding=50):
+    def __init__(self, config: ModelConfig, bert_config, bert_model, device: torch.device,
+                 emb_size=768, block_size=64, num_labels=2,):
         super().__init__()
-        self.config = config
+        self.device = device
+        self.bert_config = bert_config
         self.bert_model = bert_model
-        self.hidden_size = config.hidden_size
+        self.hidden_size = bert_config.hidden_size
 
-        self.head_extractor = nn.Linear(2 * config.hidden_size, emb_size)
-        self.tail_extractor = nn.Linear(2 * config.hidden_size, emb_size)
-        self.bilinear = nn.Linear(emb_size * block_size, config.num_labels)
+        self.head_extractor = nn.Linear(2 * bert_config.hidden_size + config.gnn.node_type_embedding, emb_size)
+        self.tail_extractor = nn.Linear(2 * bert_config.hidden_size + config.gnn.node_type_embedding, emb_size)
+        self.bilinear = nn.Linear(emb_size * block_size, bert_config.num_labels)
 
         self.emb_size = emb_size
         self.block_size = block_size
         self.num_labels = num_labels
         self.offset = 1
-        self.node_type_embedding = nn.Embedding(3, node_type_embedding)
+        self.gnn = GNN(config.gnn, bert_config.hidden_size + config.gnn.node_type_embedding, device)
+
+        self.loss_fnt = ATLoss()
 
     def encode(self, input_ids, attention_mask):
-        config = self.config
+        config = self.bert_config
         if config.transformer_type == "bert":
             start_tokens = [config.cls_token_id]
             end_tokens = [config.sep_token_id]
@@ -36,7 +44,7 @@ class ATLOPGCN(nn.Module):
 
     def get_sent_embed(self, sequence_output, batch_sent_pos, num_sent):
         batch_size, _, embed_dim = sequence_output.shape
-        sent_embed = torch.zeros((batch_size, num_sent, embed_dim))
+        sent_embed = torch.zeros((batch_size, num_sent, embed_dim)).to(self.device)
         for batch_id, sent_pos in enumerate(batch_sent_pos):
             for sent_id, pos in enumerate(sent_pos):
                 sent_embed[batch_id, sent_id] = sequence_output[batch_id, pos[0] + self.offset]
@@ -44,7 +52,7 @@ class ATLOPGCN(nn.Module):
 
     def get_mention_embed(self, sequence_output, batch_entity_pos, num_mention):
         batch_size, _, embed_dim = sequence_output.shape
-        mention_embed = torch.zeros((batch_size, num_mention, embed_dim))
+        mention_embed = torch.zeros((batch_size, num_mention, embed_dim)).to(self.device)
         for batch_id, entity_pos in enumerate(batch_entity_pos):
             mention_id = 0
             for ent_pos in entity_pos:
@@ -55,7 +63,7 @@ class ATLOPGCN(nn.Module):
 
     def get_entity_embed(self, sequence_output, batch_entity_pos, num_entity):
         batch_size, _, embed_dim = sequence_output.shape
-        entity_embed = torch.zeros((batch_size, num_entity, embed_dim))
+        entity_embed = torch.zeros((batch_size, num_entity, embed_dim)).to(self.device)
         for batch_id, entity_pos in enumerate(batch_entity_pos):
             for entity_id, ent_pos in enumerate(entity_pos):
                 embeds = []
@@ -64,13 +72,77 @@ class ATLOPGCN(nn.Module):
                 entity_embed[batch_id, entity_id] = torch.logsumexp(torch.stack(embeds, dim=0), dim=0)
         return entity_embed
 
+    def get_rss(self, sequence_output, attention, entity_pos, hts):
+        offset = 1 if self.bert_config.transformer_type in ["bert", "roberta"] else 0
+        n, h, _, c = attention.size()
+        hss, tss, rss = [], [], []
+        for i in range(len(entity_pos)):
+            entity_atts = []
+            for e in entity_pos[i]:
+                if len(e) > 1:
+                    e_att = []
+                    for start, end in e:
+                        if start + offset < c:
+                            e_att.append(attention[i, :, start + offset])
+                    if len(e_att) > 0:
+                        e_att = torch.stack(e_att, dim=0).mean(0)
+                    else:
+                        e_att = torch.zeros(h, c).to(attention)
+                else:
+                    start, end = e[0]
+                    if start + offset < c:
+                        e_att = attention[i, :, start + offset]
+                    else:
+                        e_att = torch.zeros(h, c).to(attention)
+                entity_atts.append(e_att)
+            entity_atts = torch.stack(entity_atts, dim=0)  # [n_e, h, seq_len]
+
+            ht_i = torch.LongTensor(hts[i]).to(sequence_output.device)
+
+            h_att = torch.index_select(entity_atts, 0, ht_i[:, 0])
+            t_att = torch.index_select(entity_atts, 0, ht_i[:, 1])
+            ht_att = (h_att * t_att).mean(1)
+            ht_att = ht_att / (ht_att.sum(1, keepdim=True) + 1e-5)
+            rs = contract("ld,rl->rd", sequence_output[i], ht_att)
+            rss.append(rs)
+        rss = torch.cat(rss, dim=0)
+        # print(rss.shape)
+        return rss
+
+    def get_pair_entity_embed(self, entity_hidden_state, hts):
+        s_embed, t_embed = [], []
+        for batch_id, ht in enumerate(hts):
+            for pair in ht:
+                s_embed.append(entity_hidden_state[batch_id, pair[0]])
+                t_embed.append(entity_hidden_state[batch_id, pair[1]])
+        s_embed = torch.stack(s_embed, dim=0)
+        t_embed = torch.stack(t_embed, dim=0)
+        return s_embed, t_embed
+
     def forward(self, input_ids, attention_mask,
                 entity_pos, sent_pos,
                 graph, num_mention, num_entity, num_sent,
-                labels, hts):
+                labels=None, hts=None):
         sequence_output, attention = self.encode(input_ids, attention_mask)
-        sent_embed = self.get_sent_embed(sequence_output, sent_pos, num_sent)
         mention_embed = self.get_mention_embed(sequence_output, entity_pos, num_mention)
         entity_embed = self.get_entity_embed(sequence_output, entity_pos, num_entity)
+        sent_embed = self.get_sent_embed(sequence_output, sent_pos, num_sent)
+        entity_hidden_state = self.gnn([mention_embed, entity_embed, sent_embed, graph])
+        local_context = self.get_rss(sequence_output, attention, entity_pos, hts)
+        s_embed, t_embed = self.get_pair_entity_embed(entity_hidden_state, hts)
 
-        return None
+        s_embed = torch.tanh(self.head_extractor(torch.cat([s_embed, local_context], dim=1)))
+        t_embed = torch.tanh(self.tail_extractor(torch.cat([t_embed, local_context], dim=1)))
+
+        b1 = s_embed.view(-1, self.emb_size // self.block_size, self.block_size)
+        b2 = t_embed.view(-1, self.emb_size // self.block_size, self.block_size)
+        bl = (b1.unsqueeze(3) * b2.unsqueeze(2)).view(-1, self.emb_size * self.block_size)
+        logits = self.bilinear(bl)
+
+        output = (self.loss_fnt.get_label(logits, num_labels=self.num_labels),)
+        if labels is not None:
+            labels = [torch.tensor(label) for label in labels]
+            labels = torch.cat(labels, dim=0).to(logits)
+            loss = self.loss_fnt(logits.float(), labels.float())
+            output = (loss.to(sequence_output),) + output
+        return output

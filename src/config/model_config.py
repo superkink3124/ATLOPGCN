@@ -3,38 +3,6 @@ from typing import Dict, Any
 from config.base_config import BaseConfig
 
 
-class EncoderConfig(BaseConfig):
-    required_arguments = {"elmo_dim",
-                          "use_char", "char_embedding_dim", "kernel_size", "n_filters",
-                          "use_pos", "pos_embedding_dim",
-                          "lstm_hidden_dim", "lstm_num_layers",
-                          "drop_out"}
-
-    def __init__(self, elmo_dim,
-                 use_char, char_embedding_dim, kernel_size, n_filters,
-                 use_pos, pos_embedding_dim,
-                 lstm_hidden_dim, lstm_num_layers,
-                 drop_out):
-        self.elmo_dim = elmo_dim
-        self.use_char = use_char
-        self.char_embedding_dim = char_embedding_dim
-        self.kernel_size = kernel_size
-        self.n_filters = n_filters
-        self.use_pos = use_pos
-        self.pos_embedding_dim = pos_embedding_dim
-        self.lstm_hidden_dim = lstm_hidden_dim
-        self.lstm_num_layers = lstm_num_layers
-        self.drop_out = drop_out
-
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "EncoderConfig":
-        cls.check_required(d)
-        return EncoderConfig(d['elmo_dim'],
-                             d['use_char'], d['char_embedding_dim'], d['kernel_size'], d['n_filters'],
-                             d['use_pos'], d['pos_embedding_dim'],
-                             d['lstm_hidden_dim'], d['lstm_num_layers'], d['drop_out'])
-
-
 class GNNConfig(BaseConfig):
     required_arguments = {"gnn_type", "node_type_embedding",
                           "args"}
@@ -90,19 +58,16 @@ class NERClassifierConfig(BaseConfig):
 
 
 class ModelConfig(BaseConfig):
-    required_arguments = {"encoder",
-                          "gnn",
+    required_arguments = {"gnn",
                           "classifier",
                           "use_ner",
                           "ner_classifier"}
 
     def __init__(self,
-                 encoder: EncoderConfig,
                  gnn: GNNConfig,
                  ner_classifier: NERClassifierConfig,
                  classifier: ClassifierConfig,
                  use_ner: bool):
-        self.encoder = encoder
         self.gnn = gnn
         self.ner_classifier = ner_classifier
         self.classifier = classifier
@@ -111,8 +76,7 @@ class ModelConfig(BaseConfig):
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ModelConfig":
         cls.check_required(d)
-        return ModelConfig(EncoderConfig.from_dict(d['encoder']),
-                           GNNConfig.from_dict(d['gnn']),
+        return ModelConfig(GNNConfig.from_dict(d['gnn']),
                            NERClassifierConfig.from_dict(d['ner_classifier']),
                            ClassifierConfig.from_dict(d['classifier']),
                            d['use_ner'])

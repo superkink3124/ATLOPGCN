@@ -12,8 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from transformers import AutoTokenizer, AutoModel, AutoConfig
 
 from config.cdr_config import CDRConfig
-from corpus.cdr_corpus import CDRCorpus
-from dataset.collator import Collator, collate_fn
+from dataset.collator import collate_fn
 from torch.utils.data import DataLoader
 import logging
 
@@ -66,13 +65,23 @@ if __name__ == "__main__":
     parser.add_argument("--config", default="./config.json")
     parser.add_argument("--seed", default=22, type=int)
     parser.add_argument("--concat", action="store_true")
-
-    parser.add_argument("--lr", type=float, default=None)
-    parser.add_argument("--dropout", type=float, default=None)
     args = parser.parse_args()
-    # device = "cuda"
     pretrained_name = 'allenai/scibert_scivocab_cased'
     tokenizer = AutoTokenizer.from_pretrained(pretrained_name)
+    tokenizer.add_special_tokens({
+        'additional_special_tokens': [
+            '[ENTITY]',
+            '[SENT]',
+            '[/ENTITY]',
+            '[/SENT]'
+        ]
+    })
+    bert_model = AutoModel.from_pretrained(pretrained_name)
+    bert_config = AutoConfig.from_pretrained(pretrained_name)
+    bert_config.cls_token_id = tokenizer.cls_token_id
+    bert_config.sep_token_id = tokenizer.sep_token_id
+    bert_config.transformer_type = args.transformer_type
+    bert_model.resize_token_embeddings(len(tokenizer))
     device = "cpu"
     config = CDRConfig.from_json(args.config)
     experiment_dir = setup_experiment_dir(config)
@@ -87,43 +96,4 @@ if __name__ == "__main__":
     if dev_features is not None:
         dev_loader = DataLoader(dev_features, batch_size=config.train.batch_size, collate_fn=collate_fn)
     test_loader = DataLoader(test_features, batch_size=config.train.batch_size, collate_fn=collate_fn)
-    bert_model = AutoModel.from_pretrained(pretrained_name)
-    bert_config = AutoConfig.from_pretrained(pretrained_name)
 
-    config.cls_token_id = tokenizer.cls_token_id
-    config.sep_token_id = tokenizer.sep_token_id
-    config.transformer_type = args.transformer_type
-
-    train_features.
-
-
-    # if args.concat:
-    #     train_features.extend(dev_features)
-    #     collator = Collator(corpus)
-    #     train_dataloader = DataLoader(train_dataset,
-    #                                   batch_size=config.train.batch_size,
-    #                                   shuffle=True,
-    #                                   collate_fn=collator.collate)
-    #     test_dataloader = DataLoader(test_dataset,
-    #                                  batch_size=config.train.batch_size,
-    #                                  shuffle=True,
-    #                                  collate_fn=collator.collate)
-    #     logger.info(config)
-    #     logger.info("_" * 50)
-    #     trainer = Trainer(config, logger, None, device)
-    #     trainer.train(train_dataloader)
-    #     trainer.evaluate(test_dataloader)
-    # else:
-    #     collator = Collator(corpus)
-    #     train_dataloader = DataLoader(train_dataset,
-    #                                   batch_size=config.train.batch_size,
-    #                                   shuffle=True,
-    #                                   collate_fn=collator.collate)
-    #     dev_dataloader = DataLoader(dev_dataset,
-    #                                 batch_size=config.train.batch_size,
-    #                                 shuffle=True,
-    #                                 collate_fn=collator.collate)
-    #     logger.info(config)
-    #     logger.info("_" * 50)
-    #     trainer = Trainer(config, logger, None, device)
-    #     trainer.train(train_dataloader, dev_dataloader)
