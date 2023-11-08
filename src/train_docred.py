@@ -234,7 +234,7 @@ def main():
     # wandb.init(project="DocRED")
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    args.n_gpu = torch.cuda.device_count()
+    # args.n_gpu = torch.cuda.device_count()
     args.device = device
 
     bert_config = AutoConfig.from_pretrained(
@@ -257,7 +257,6 @@ def main():
         config=bert_config,
     )
     bert_model.resize_token_embeddings(len(tokenizer))
-
     read = read_docred
 
     train_file = os.path.join(args.data_dir, args.train_file)
@@ -273,7 +272,7 @@ def main():
     config_path = args.config_path
     config = RunConfig.from_json(config_path)
     model = ATLOPGCN(config.model, bert_model, device)
-
+    model = model.to(device)
     experiment_dir = setup_experiment_dir(config, tokenizer, bert_model)
     logger = get_logger(os.path.join(experiment_dir, 'log.txt'))
     train_features.extend(dev_features)
