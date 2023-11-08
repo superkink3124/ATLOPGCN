@@ -352,6 +352,7 @@ def read_docred(file_in, tokenizer, max_seq_length=1024):
                    'labels': relations,
                    'hts': hts,
                    'title': sample['title'],
+                   'sent_pos': sent_pos
                    }
         features.append(feature)
 
