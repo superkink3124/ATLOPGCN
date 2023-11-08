@@ -6,7 +6,7 @@ from datetime import datetime
 
 import numpy as np
 import torch
-from apex import amp
+# from apex import amp
 import json
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -60,9 +60,9 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                           }
                 outputs = model(**inputs)
                 loss = outputs[0] / args.gradient_accumulation_steps
-                # loss.backward()
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
+                loss.backward()
+                # with amp.scale_loss(loss, optimizer) as scaled_loss:
+                #     scaled_loss.backward()
                 if step % args.gradient_accumulation_steps == 0:
                     # if args.max_grad_norm > 0:
                     #     torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
@@ -95,7 +95,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
     ]
 
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-    model, optimizer = amp.initialize(model, optimizer, opt_level="O1", verbosity=0)
+    # model, optimizer = amp.initialize(model, optimizer, opt_level="O1", verbosity=0)
     num_steps = 0
     set_seed(args.seed)
     model.zero_grad()
