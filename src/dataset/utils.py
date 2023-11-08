@@ -3,7 +3,7 @@ import json
 from tqdm import tqdm
 from typing import List, Any
 
-docred_rel2id = json.load(open('meta/rel2id.json', 'r'))
+docred_rel2id = json.load(open('../dataset/meta/rel2id.json', 'r'))
 cdr_rel2id = {'1:NR:2': 0, '1:CID:2': 1}
 gda_rel2id = {'1:NR:2': 0, '1:GDA:2': 1}
 
