@@ -6,7 +6,7 @@ import torch
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
 
-from config.cdr_config import CDRConfig
+from config.cdr_config import RunConfig
 from logging import Logger
 from torch.utils.tensorboard import SummaryWriter
 
@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 
 class Trainer:
-    def __init__(self, config: CDRConfig, logger: Logger, summary_writer: SummaryWriter, device: str,
+    def __init__(self, config: RunConfig, logger: Logger, summary_writer: SummaryWriter, device: str,
                  experiment_dir: str):
         super().__init__()
         self.logger = logger

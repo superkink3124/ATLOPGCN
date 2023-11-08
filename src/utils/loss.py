@@ -1,4 +1,4 @@
-from config.cdr_config import CDRConfig
+from config.cdr_config import RunConfig
 import torch
 from torch import Tensor
 from torch import nn
@@ -24,6 +24,6 @@ class CIDGCNLossFn:
         return loss
 
 
-def get_loss_from_config(config: CDRConfig, device: str = "cpu"):
+def get_loss_from_config(config: RunConfig, device: str = "cpu"):
     pos_weight = 1 if 'pos_weight' not in config.train.loss.arguments else config.train.loss.arguments['pos_weight']
     return CIDGCNLossFn(pos_weight, device)

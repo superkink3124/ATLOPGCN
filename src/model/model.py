@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from transformers import AutoModel, PreTrainedModel
 
 from config.model_config import ModelConfig
 from model.utils import process_long_input
@@ -9,10 +10,13 @@ from model.losses import ATLoss
 
 
 class ATLOPGCN(nn.Module):
-    def __init__(self, config: ModelConfig, bert_config, bert_model, device: torch.device,
-                 emb_size=768, block_size=64, num_labels=2,):
+    def __init__(self, config: ModelConfig,
+                 # bert_config,
+                 bert_model: PreTrainedModel, device: torch.device,
+                 emb_size=768, block_size=64):
         super().__init__()
         self.device = device
+        bert_config = bert_model.config
         self.bert_config = bert_config
         self.bert_model = bert_model
         self.hidden_size = bert_config.hidden_size
@@ -23,7 +27,7 @@ class ATLOPGCN(nn.Module):
 
         self.emb_size = emb_size
         self.block_size = block_size
-        self.num_labels = num_labels
+        self.num_labels = config.classifier.num_classes
         self.offset = 1
         self.gnn = GNN(config.gnn, bert_config.hidden_size + config.gnn.node_type_embedding, device)
 
