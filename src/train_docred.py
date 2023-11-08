@@ -128,7 +128,6 @@ def evaluate(args, model, features, tag="dev"):
                   'num_mention': num_mention,
                   'num_entity': num_entity,
                   'num_sent': num_sent,
-                  'labels': labels,
                   'hts': hts,
                   }
 
@@ -170,7 +169,6 @@ def report(args, model, features):
                   'num_mention': num_mention,
                   'num_entity': num_entity,
                   'num_sent': num_sent,
-                  'labels': labels,
                   'hts': hts,
                   }
 
