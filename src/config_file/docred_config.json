@@ -5,7 +5,7 @@
         "classifier": {
             "drop_out": 0.5,
             "hidden_layer_dim": 64,
-            "num_classes": 2,
+            "num_classes": 97,
             "use_hidden_layer": false
         },
         "encoder": {

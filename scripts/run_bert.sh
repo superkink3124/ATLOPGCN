@@ -1,4 +1,4 @@
-python train.py --data_dir ./dataset/docred \
+python train_docred.py --data_dir ./dataset/docred \
 --transformer_type bert \
 --model_name_or_path bert-base-cased \
 --train_file train_annotated.json \
@@ -12,5 +12,4 @@ python train.py --data_dir ./dataset/docred \
 --max_grad_norm 1.0 \
 --warmup_ratio 0.06 \
 --num_train_epochs 30.0 \
---seed 66 \
---num_class 97
+--seed 66
