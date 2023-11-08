@@ -7,3 +7,4 @@ data/prepared_data/**/*.json
 data/cdr
 src/experiments
 src/debug
+dataset/**/*.json
