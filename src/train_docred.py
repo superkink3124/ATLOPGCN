@@ -187,7 +187,7 @@ def setup_experiment_dir(config, tokenizer, bert_model):
 def main():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--data_dir", default="./dataset/docred", type=str)
+    parser.add_argument("--data_dir", default="../dataset/docred", type=str)
     parser.add_argument("--transformer_type", default="bert", type=str)
     parser.add_argument("--model_name_or_path", default="bert-base-cased", type=str)
 

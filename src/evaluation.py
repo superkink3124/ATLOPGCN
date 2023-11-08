@@ -3,7 +3,7 @@ import os.path
 import json
 import numpy as np
 
-rel2id = json.load(open('meta/rel2id.json', 'r'))
+rel2id = json.load(open('../dataset/meta/rel2id.json', 'r'))
 id2rel = {value: key for key, value in rel2id.items()}
 
 
