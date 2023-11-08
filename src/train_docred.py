@@ -85,6 +85,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                 #             json.dump(pred, fh)
                 #         if args.save_path != "":
                 #             torch.save(model.state_dict(), args.save_path)
+        os.makedirs(os.path.join(experiment_dir, 'model'))
         torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
         return num_steps
 
