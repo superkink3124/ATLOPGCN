@@ -6,9 +6,10 @@ from datetime import datetime
 
 import numpy as np
 import torch
-# from apex import amp
+from apex import amp
 import json
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 from transformers import AutoConfig, AutoModel, AutoTokenizer, set_seed
 from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 
@@ -38,7 +39,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
         logger.info("Warmup steps: {}".format(warmup_steps))
         for epoch in train_iterator:
             model.zero_grad()
-            for step, batch in enumerate(train_dataloader):
+            for step, batch in tqdm(enumerate(train_dataloader)):
                 model.train()
                 (
                     input_ids, input_mask,
@@ -59,9 +60,9 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                           }
                 outputs = model(**inputs)
                 loss = outputs[0] / args.gradient_accumulation_steps
-                loss.backward()
-                # with amp.scale_loss(loss, optimizer) as scaled_loss:
-                #     scaled_loss.backward()
+                # loss.backward()
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
                 if step % args.gradient_accumulation_steps == 0:
                     # if args.max_grad_norm > 0:
                     #     torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
@@ -94,7 +95,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
     ]
 
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-    # model, optimizer = amp.initialize(model, optimizer, opt_level="O1", verbosity=0)
+    model, optimizer = amp.initialize(model, optimizer, opt_level="O1", verbosity=0)
     num_steps = 0
     set_seed(args.seed)
     model.zero_grad()
@@ -110,10 +111,23 @@ def evaluate(args, model, features, tag="dev"):
     for batch in dataloader:
         model.eval()
 
-        inputs = {'input_ids': batch[0].to(args.device),
-                  'attention_mask': batch[1].to(args.device),
-                  'entity_pos': batch[3],
-                  'hts': batch[4],
+        (
+            input_ids, input_mask,
+            entity_pos, sent_pos,
+            graph, num_mention, num_entity, num_sent,
+            labels, hts
+        ) = batch
+
+        inputs = {'input_ids': input_ids.to(args.device),
+                  'attention_mask': input_mask.to(args.device),
+                  'entity_pos': entity_pos,
+                  'sent_pos': sent_pos,
+                  'graph': graph.to(args.device),
+                  'num_mention': num_mention,
+                  'num_entity': num_entity,
+                  'num_sent': num_sent,
+                  'labels': labels,
+                  'hts': hts,
                   }
 
         with torch.no_grad():
@@ -140,10 +154,22 @@ def report(args, model, features):
     for batch in dataloader:
         model.eval()
 
-        inputs = {'input_ids': batch[0].to(args.device),
-                  'attention_mask': batch[1].to(args.device),
-                  'entity_pos': batch[3],
-                  'hts': batch[4],
+        (
+            input_ids, input_mask,
+            entity_pos, sent_pos,
+            graph, num_mention, num_entity, num_sent,
+            labels, hts
+        ) = batch
+        inputs = {'input_ids': input_ids.to(args.device),
+                  'attention_mask': input_mask.to(args.device),
+                  'entity_pos': entity_pos,
+                  'sent_pos': sent_pos,
+                  'graph': graph.to(args.device),
+                  'num_mention': num_mention,
+                  'num_entity': num_entity,
+                  'num_sent': num_sent,
+                  'labels': labels,
+                  'hts': hts,
                   }
 
         with torch.no_grad():
