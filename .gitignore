@@ -8,3 +8,4 @@ data/cdr
 src/experiments
 src/debug
 dataset/**/*.json
+dataset/**/*.data

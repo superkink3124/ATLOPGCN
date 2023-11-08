@@ -15,7 +15,7 @@ from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 from config.run_config import RunConfig
 from model.model import ATLOPGCN
 from dataset.collator import collate_fn
-from dataset.utils import read_cdr
+from dataset.utils import read_gda
 # import wandb
 from tqdm import tqdm
 
@@ -81,8 +81,11 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                 #             torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
                 #     else:
                 #         torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
+                #     test_score, test_output = evaluate(args, model, test_features, tag="test")
+                #     logger.info(f"Test score: {test_score} ")
                     # wandb.log(dev_output, step=num_steps)
                     # wandb.log(test_output, step=num_steps)
+        torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
         return num_steps
 
     new_layer = ["extractor", "bilinear"]
@@ -175,7 +178,7 @@ def setup_experiment_dir(config, tokenizer, bert_model):
 def main():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--data_dir", default="../data/cdr", type=str)
+    parser.add_argument("--data_dir", default="../data/gda", type=str)
     parser.add_argument("--transformer_type", default="bert", type=str)
     parser.add_argument("--model_name_or_path", default="allenai/scibert_scivocab_cased", type=str)
 
@@ -216,11 +219,8 @@ def main():
                         help="random seed for initialization.")
     parser.add_argument("--num_class", type=int, default=2,
                         help="Number of relation types in dataset.")
-    parser.add_argument('--config_path', type=str, default='config_file/cdr_config.json')
-
+    parser.add_argument('--config_path', type=str, default='config_file/gda_config.json')
     args = parser.parse_args()
-    # wandb.init(project="CDR")
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     args.n_gpu = torch.cuda.device_count()
     args.device = device
@@ -246,7 +246,7 @@ def main():
         config=bert_config,
     )
     bert_model.resize_token_embeddings(len(tokenizer))
-    read = read_cdr
+    read = read_gda
     train_file = os.path.join(args.data_dir, args.train_file)
     dev_file = os.path.join(args.data_dir, args.dev_file)
     test_file = os.path.join(args.data_dir, args.test_file)

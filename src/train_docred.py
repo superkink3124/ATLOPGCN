@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 import os
 import re
@@ -8,6 +7,7 @@ from datetime import datetime
 import numpy as np
 import torch
 # from apex import amp
+import json
 from torch.utils.data import DataLoader
 from transformers import AutoConfig, AutoModel, AutoTokenizer, set_seed
 from transformers.optimization import AdamW, get_linear_schedule_with_warmup
@@ -15,9 +15,9 @@ from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 from config.run_config import RunConfig
 from model.model import ATLOPGCN
 from dataset.collator import collate_fn
-from dataset.utils import read_cdr
+from dataset.utils import read_docred
+from evaluation import to_official, official_evaluate
 # import wandb
-from tqdm import tqdm
 
 
 def train(args, model, train_features, dev_features, test_features, experiment_dir, logger):
@@ -25,7 +25,8 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
         best_score = -1
         train_dataloader = DataLoader(features,
                                       batch_size=args.train_batch_size,
-                                      shuffle=True, collate_fn=collate_fn,
+                                      shuffle=True,
+                                      collate_fn=collate_fn,
                                       drop_last=True)
         train_iterator = range(int(num_epoch))
         total_steps = int(len(train_dataloader) * num_epoch // args.gradient_accumulation_steps)
@@ -37,7 +38,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
         logger.info("Warmup steps: {}".format(warmup_steps))
         for epoch in train_iterator:
             model.zero_grad()
-            for step, batch in tqdm(enumerate(train_dataloader)):
+            for step, batch in enumerate(train_dataloader):
                 model.train()
                 (
                     input_ids, input_mask,
@@ -71,18 +72,19 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                 # wandb.log({"loss": loss.item()}, step=num_steps)
                 if step % 100 == 0:
                     logger.info(loss)
-                # if ((step + 1) == len(train_dataloader) - 1 or
-                #         (args.evaluation_steps > 0 and num_steps % args.evaluation_steps == 0 and
-                #          step % args.gradient_accumulation_steps == 0)):
-                #     if dev_features is not None:
-                #         dev_score, dev_output = evaluate(args, model, dev_features, tag="dev")
-                #         if dev_score > best_score:
-                #             best_score = dev_score
-                #             torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
-                #     else:
-                #         torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
-                    # wandb.log(dev_output, step=num_steps)
-                    # wandb.log(test_output, step=num_steps)
+                # if (step + 1) == len(train_dataloader) - 1 or (args.evaluation_steps > 0 and num_steps % args.evaluation_steps == 0 and step % args.gradient_accumulation_steps == 0):
+                #     dev_score, dev_output = evaluate(args, model, dev_features, tag="dev")
+                #     logger.info(f'Dev score: {dev_score}')
+                #     # wandb.log(dev_output, step=num_steps)
+                #     logger.info (dev_output)
+                #     if dev_score > best_score:
+                #         best_score = dev_score
+                #         pred = report(args, model, test_features)
+                #         with open("result.json", "w") as fh:
+                #             json.dump(pred, fh)
+                #         if args.save_path != "":
+                #             torch.save(model.state_dict(), args.save_path)
+        torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
         return num_steps
 
     new_layer = ["extractor", "bilinear"]
@@ -90,37 +92,28 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
         {"params": [p for n, p in model.named_parameters() if not any(nd in n for nd in new_layer)], },
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in new_layer)], "lr": 1e-4},
     ]
+
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     # model, optimizer = amp.initialize(model, optimizer, opt_level="O1", verbosity=0)
     num_steps = 0
     set_seed(args)
     model.zero_grad()
     finetune(train_features, optimizer, args.num_train_epochs, num_steps)
-    test_score, test_output = evaluate(args, model, test_features, tag="test")
-    logger.info(f"Test score: {test_score} ")
+    test_score, test_output = evaluate(args, model, test_features, 'test')
+    logger.info(f'Test score: {test_score}')
 
 
 def evaluate(args, model, features, tag="dev"):
 
     dataloader = DataLoader(features, batch_size=args.test_batch_size, shuffle=False, collate_fn=collate_fn, drop_last=False)
-    preds, golds = [], []
+    preds = []
     for batch in dataloader:
         model.eval()
-        (
-            input_ids, input_mask,
-            entity_pos, sent_pos,
-            graph, num_mention, num_entity, num_sent,
-            labels, hts
-        ) = batch
-        inputs = {'input_ids': input_ids.to(args.device),
-                  'attention_mask': input_mask.to(args.device),
-                  'entity_pos': entity_pos,
-                  'sent_pos': sent_pos,
-                  'graph': graph.to(args.device),
-                  'num_mention': num_mention,
-                  'num_entity': num_entity,
-                  'num_sent': num_sent,
-                  'hts': hts,
+
+        inputs = {'input_ids': batch[0].to(args.device),
+                  'attention_mask': batch[1].to(args.device),
+                  'entity_pos': batch[3],
+                  'hts': batch[4],
                   }
 
         with torch.no_grad():
@@ -128,21 +121,40 @@ def evaluate(args, model, features, tag="dev"):
             pred = pred.cpu().numpy()
             pred[np.isnan(pred)] = 0
             preds.append(pred)
-            golds.append(np.concatenate([np.array(label, np.float32) for label in labels], axis=0))
-    # print(preds)
-    preds = np.concatenate(preds, axis=0).astype(np.float32)
-    golds = np.concatenate(golds, axis=0).astype(np.float32)
 
-    tp = ((preds[:, 1] == 1) & (golds[:, 1] == 1)).astype(np.float32).sum()
-    tn = ((golds[:, 1] == 1) & (preds[:, 1] != 1)).astype(np.float32).sum()
-    fp = ((preds[:, 1] == 1) & (golds[:, 1] != 1)).astype(np.float32).sum()
-    precision = tp / (tp + fp + 1e-5)
-    recall = tp / (tp + tn + 1e-5)
-    f1 = 2 * precision * recall / (precision + recall + 1e-5)
+    preds = np.concatenate(preds, axis=0).astype(np.float32)
+    ans = to_official(preds, features)
+    if len(ans) > 0:
+        best_f1, _, best_f1_ign, _ = official_evaluate(ans, args.data_dir)
     output = {
-        "{}_f1".format(tag): f1 * 100,
+        tag + "_F1": best_f1 * 100,
+        tag + "_F1_ign": best_f1_ign * 100,
     }
-    return f1, output
+    return best_f1, output
+
+
+def report(args, model, features):
+
+    dataloader = DataLoader(features, batch_size=args.test_batch_size, shuffle=False, collate_fn=collate_fn, drop_last=False)
+    preds = []
+    for batch in dataloader:
+        model.eval()
+
+        inputs = {'input_ids': batch[0].to(args.device),
+                  'attention_mask': batch[1].to(args.device),
+                  'entity_pos': batch[3],
+                  'hts': batch[4],
+                  }
+
+        with torch.no_grad():
+            pred, *_ = model(**inputs)
+            pred = pred.cpu().numpy()
+            pred[np.isnan(pred)] = 0
+            preds.append(pred)
+
+    preds = np.concatenate(preds, axis=0).astype(np.float32)
+    preds = to_official(preds, features)
+    return preds
 
 
 def get_logger(filename: str):
@@ -175,13 +187,14 @@ def setup_experiment_dir(config, tokenizer, bert_model):
 def main():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--data_dir", default="../data/cdr", type=str)
+    parser.add_argument("--data_dir", default="./dataset/docred", type=str)
     parser.add_argument("--transformer_type", default="bert", type=str)
-    parser.add_argument("--model_name_or_path", default="allenai/scibert_scivocab_cased", type=str)
+    parser.add_argument("--model_name_or_path", default="bert-base-cased", type=str)
 
-    parser.add_argument("--train_file", default="train_filter.data", type=str)
-    parser.add_argument("--dev_file", default="dev_filter.data", type=str)
-    parser.add_argument("--test_file", default="test_filter.data", type=str)
+    parser.add_argument("--train_file", default="train_annotated.json", type=str)
+    parser.add_argument("--dev_file", default="dev.json", type=str)
+    parser.add_argument("--test_file", default="test.json", type=str)
+    parser.add_argument("--save_path", default="", type=str)
     parser.add_argument("--load_path", default="", type=str)
 
     parser.add_argument("--config_name", default="", type=str,
@@ -198,9 +211,9 @@ def main():
                         help="Batch size for testing.")
     parser.add_argument("--gradient_accumulation_steps", default=1, type=int,
                         help="Number of updates steps to accumulate before performing a backward/update pass.")
-    parser.add_argument("--num_labels", default=1, type=int,
-                        help="Max number of labels in the prediction.")
-    parser.add_argument("--learning_rate", default=2e-5, type=float,
+    parser.add_argument("--num_labels", default=4, type=int,
+                        help="Max number of labels in prediction.")
+    parser.add_argument("--learning_rate", default=5e-5, type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--adam_epsilon", default=1e-6, type=float,
                         help="Epsilon for Adam optimizer.")
@@ -213,18 +226,17 @@ def main():
     parser.add_argument("--evaluation_steps", default=-1, type=int,
                         help="Number of training steps between evaluations.")
     parser.add_argument("--seed", type=int, default=66,
-                        help="random seed for initialization.")
-    parser.add_argument("--num_class", type=int, default=2,
+                        help="random seed for initialization")
+    parser.add_argument("--num_class", type=int, default=97,
                         help="Number of relation types in dataset.")
-    parser.add_argument('--config_path', type=str, default='config_file/cdr_config.json')
-
+    parser.add_argument('--config_path', type=str, default='config_file/docred_config.json')
     args = parser.parse_args()
-    # wandb.init(project="CDR")
+    # wandb.init(project="DocRED")
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     args.n_gpu = torch.cuda.device_count()
     args.device = device
-    # print(args.model_name_or_path)
+
     bert_config = AutoConfig.from_pretrained(
         args.model_name_or_path,
         num_labels=args.num_class,
@@ -232,7 +244,6 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_name_or_path,
     )
-
     tokenizer.add_special_tokens({
         'additional_special_tokens': [
             '[ENTITY]',
@@ -246,7 +257,9 @@ def main():
         config=bert_config,
     )
     bert_model.resize_token_embeddings(len(tokenizer))
-    read = read_cdr
+
+    read = read_docred
+
     train_file = os.path.join(args.data_dir, args.train_file)
     dev_file = os.path.join(args.data_dir, args.dev_file)
     test_file = os.path.join(args.data_dir, args.test_file)
@@ -263,17 +276,18 @@ def main():
 
     experiment_dir = setup_experiment_dir(config, tokenizer, bert_model)
     logger = get_logger(os.path.join(experiment_dir, 'log.txt'))
-    model.to(device)
     train_features.extend(dev_features)
-    if args.load_path == "":
+
+    if args.load_path == "":  # Training
         train(args, model, train_features, dev_features, test_features, experiment_dir, logger)
-    else:
+    else:  # Testing
         # model = amp.initialize(model, opt_level="O1", verbosity=0)
         model.load_state_dict(torch.load(args.load_path))
         dev_score, dev_output = evaluate(args, model, dev_features, tag="dev")
-        test_score, test_output = evaluate(args, model, test_features, tag="test")
-        logger.info(dev_output)
-        logger.info(test_output)
+        print(dev_output)
+        pred = report(args, model, test_features)
+        with open("result.json", "w") as fh:
+            json.dump(pred, fh)
 
 
 if __name__ == "__main__":
