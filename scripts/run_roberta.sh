@@ -1,4 +1,4 @@
-python train_docred.py --data_dir ./dataset/docred \
+python train_docred.py --data_dir ../dataset/docred \
 --transformer_type roberta \
 --model_name_or_path roberta-large \
 --train_file train_annotated.json \
