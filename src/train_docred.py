@@ -102,6 +102,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
     finetune(train_features, optimizer, args.num_train_epochs, num_steps)
     test_score, test_output = evaluate(args, model, test_features, 'test')
     logger.info(f'Test score: {test_score}')
+    logger.info(f'Output: {test_output}')
 
 
 def evaluate(args, model, features, tag="dev"):
