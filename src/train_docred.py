@@ -110,7 +110,7 @@ def evaluate(args, model, features, tag="dev"):
 
     dataloader = DataLoader(features, batch_size=args.test_batch_size, shuffle=False, collate_fn=collate_fn, drop_last=False)
     preds = []
-    for batch in dataloader:
+    for batch in tqdm(dataloader):
         model.eval()
 
         (
@@ -152,7 +152,7 @@ def report(args, model, features):
 
     dataloader = DataLoader(features, batch_size=args.test_batch_size, shuffle=False, collate_fn=collate_fn, drop_last=False)
     preds = []
-    for batch in dataloader:
+    for batch in tqdm(dataloader):
         model.eval()
 
         (
