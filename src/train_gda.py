@@ -169,7 +169,7 @@ def setup_experiment_dir(config, tokenizer, bert_model):
     experiment_dir = os.path.join(config.experiment_dir, experiment_subdir)
     os.makedirs(experiment_dir)
     with open(f"{experiment_dir}/config.json", "w") as outfile:
-        json.dump(config, outfile, indent=4, ensure_ascii=False)
+        outfile.write(config)
     tokenizer.save_pretrained(f'{experiment_dir}')
     bert_model.saved_pretrained(f'{experiment_dir}')
     return experiment_dir
