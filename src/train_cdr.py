@@ -83,6 +83,8 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                 #         torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
                     # wandb.log(dev_output, step=num_steps)
                     # wandb.log(test_output, step=num_steps)
+        os.makedirs(os.path.join(experiment_dir, 'model'))
+        torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
         return num_steps
 
     new_layer = ["extractor", "bilinear"]

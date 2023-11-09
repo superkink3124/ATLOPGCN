@@ -101,9 +101,12 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
     set_seed(args.seed)
     model.zero_grad()
     finetune(train_features, optimizer, args.num_train_epochs, num_steps)
+    dev_score, dev_output = evaluate(args, model, dev_features, 'dev')
+    logger.info(f'Dev score: {dev_score}')
+    logger.info(f'Dev output: {dev_output}')
     test_score, test_output = evaluate(args, model, test_features, 'test')
     logger.info(f'Test score: {test_score}')
-    logger.info(f'Output: {test_output}')
+    logger.info(f'Test output: {test_output}')
 
 
 def evaluate(args, model, features, tag="dev"):
