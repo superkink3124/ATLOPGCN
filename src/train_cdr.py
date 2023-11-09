@@ -93,7 +93,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
     optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     # model, optimizer = amp.initialize(model, optimizer, opt_level="O1", verbosity=0)
     num_steps = 0
-    set_seed(args)
+    set_seed(args.seed)
     model.zero_grad()
     finetune(train_features, optimizer, args.num_train_epochs, num_steps)
     test_score, test_output = evaluate(args, model, test_features, tag="test")
