@@ -171,7 +171,7 @@ def setup_experiment_dir(config, tokenizer, bert_model):
     with open(f"{experiment_dir}/config.json", "w") as outfile:
         outfile.write(str(config))
     tokenizer.save_pretrained(f'{experiment_dir}')
-    bert_model.saved_pretrained(f'{experiment_dir}')
+    bert_model.save_pretrained(f'{experiment_dir}')
     return experiment_dir
 
 
