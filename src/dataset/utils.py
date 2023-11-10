@@ -242,7 +242,8 @@ def read_gda(file_in, tokenizer, max_seq_length=1024):
                         relation[mention["relation"]] = 1
                     relations.append(relation)
                     hts.append([h, t])
-
+            if len(sents) > max_seq_length - 4:
+                continue
             maxlen = max(maxlen, len(sents))
             sents = sents[:max_seq_length - 2]
             input_ids = tokenizer.convert_tokens_to_ids(sents)
@@ -250,11 +251,11 @@ def read_gda(file_in, tokenizer, max_seq_length=1024):
 
             if len(hts) > 0:
                 feature = {'input_ids': input_ids,
-                           'entity_pos': entity_pos,
+                           'entity_pos': [[pos for pos in list_pos if pos[1] < len(sents)] for list_pos in entity_pos],
                            'labels': relations,
                            'hts': hts,
                            'title': pmid,
-                           'sent_pos': sent_pos
+                           'sent_pos': [pos for pos in sent_pos if pos[1] < len(sents)]
                            }
                 features.append(feature)
     print("Number of documents: {}.".format(len(features)))

@@ -56,6 +56,8 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                           'labels': labels,
                           'hts': hts,
                           }
+                if any([len(pos) == 0 for pos in entity_pos]) or len(sent_pos) == 0:
+                    continue
                 outputs = model(**inputs)
                 loss = outputs[0] / args.gradient_accumulation_steps
                 loss.backward()
