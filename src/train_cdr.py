@@ -9,7 +9,7 @@ import numpy as np
 import torch
 # from apex import amp
 from torch.utils.data import DataLoader
-from transformers import AutoConfig, AutoModel, AutoTokenizer, set_seed
+from transformers import AutoConfig, BertModel, AutoTokenizer, set_seed
 from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 
 from config.run_config import RunConfig
@@ -87,7 +87,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
         torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
         return num_steps
 
-    new_layer = ["extractor", "bilinear"]
+    new_layer = ["extractor", "bilinear", 'gnn']
     optimizer_grouped_parameters = [
         {"params": [p for n, p in model.named_parameters() if not any(nd in n for nd in new_layer)], },
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in new_layer)], "lr": 1e-4},
@@ -99,7 +99,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
     model.zero_grad()
     finetune(train_features, optimizer, args.num_train_epochs, num_steps)
     test_score, test_output = evaluate(args, model, test_features, tag="test")
-    logger.info(f"Test score: {test_score} ")
+    logger.info(f"Test output: {test_output} ")
 
 
 def evaluate(args, model, features, tag="dev"):
@@ -142,7 +142,9 @@ def evaluate(args, model, features, tag="dev"):
     recall = tp / (tp + tn + 1e-5)
     f1 = 2 * precision * recall / (precision + recall + 1e-5)
     output = {
-        "{}_f1".format(tag): f1 * 100,
+        f"{tag}_precision": precision,
+        f"{tag}_recall": recall,
+        "{}_f1".format(tag): f1,
     }
     return f1, output
 
@@ -243,7 +245,7 @@ def main():
             '[/SENT]'
         ]
     })
-    bert_model = AutoModel.from_pretrained(
+    bert_model = BertModel.from_pretrained(
         args.model_name_or_path,
         config=bert_config,
     )

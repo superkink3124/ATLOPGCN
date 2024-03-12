@@ -9,3 +9,5 @@ src/experiments
 src/debug
 dataset/**/*.json
 dataset/**/*.data
+**/.ipynb_checkpoints/
+src/experiments_cdr

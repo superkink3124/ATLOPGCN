@@ -73,9 +73,11 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                 # wandb.log({"loss": loss.item()}, step=num_steps)
                 if step % 100 == 0:
                     logger.info(loss)
-                # if (step + 1) == len(train_dataloader) - 1 or (args.evaluation_steps > 0 and num_steps % args.evaluation_steps == 0 and step % args.gradient_accumulation_steps == 0):
-                #     dev_score, dev_output = evaluate(args, model, dev_features, tag="dev")
-                #     logger.info(f'Dev score: {dev_score}')
+                if (step + 1) == len(train_dataloader) - 1 or (args.evaluation_steps > 0 and num_steps % args.evaluation_steps == 0 and step % args.gradient_accumulation_steps == 0):
+                    dev_score, dev_output = evaluate(args, model, dev_features, tag="dev")
+                    logger.info(f'Dev score: {dev_score}')
+                    test_score, test_output = evaluate(args, model, test_features, 'test')
+                    logger.info(f'Test output: {test_output}')
                 #     # wandb.log(dev_output, step=num_steps)
                 #     logger.info (dev_output)
                 #     if dev_score > best_score:
@@ -89,7 +91,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
         torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
         return num_steps
 
-    new_layer = ["extractor", "bilinear"]
+    new_layer = ["extractor", "bilinear", "gnn"]
     optimizer_grouped_parameters = [
         {"params": [p for n, p in model.named_parameters() if not any(nd in n for nd in new_layer)], },
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in new_layer)], "lr": 1e-4},
@@ -133,11 +135,13 @@ def evaluate(args, model, features, tag="dev"):
                   'num_sent': num_sent,
                   'hts': hts,
                   }
-
+        # print(input_ids.shape)
         with torch.no_grad():
             pred, *_ = model(**inputs)
+            # print(torch.mean(pred))
             pred = pred.cpu().numpy()
             pred[np.isnan(pred)] = 0
+            # print(pred.shape)
             preds.append(pred)
 
     preds = np.concatenate(preds, axis=0).astype(np.float32)
@@ -304,7 +308,7 @@ def main():
     model = model.to(device)
     experiment_dir = setup_experiment_dir(config, tokenizer, bert_model)
     logger = get_logger(os.path.join(experiment_dir, 'log.txt'))
-    train_features.extend(dev_features)
+    # train_features.extend(dev_features)
 
     if args.load_path == "":  # Training
         train(args, model, train_features, dev_features, test_features, experiment_dir, logger)

@@ -56,6 +56,8 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                           'labels': labels,
                           'hts': hts,
                           }
+                if any([len(pos) == 0 for pos in entity_pos]) or len(sent_pos) == 0:
+                    continue
                 outputs = model(**inputs)
                 loss = outputs[0] / args.gradient_accumulation_steps
                 loss.backward()
@@ -85,6 +87,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                 #     logger.info(f"Test score: {test_score} ")
                     # wandb.log(dev_output, step=num_steps)
                     # wandb.log(test_output, step=num_steps)
+        os.makedirs(os.path.join(experiment_dir, 'model'))
         torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
         return num_steps
 
@@ -221,8 +224,8 @@ def main():
                         help="Number of relation types in dataset.")
     parser.add_argument('--config_path', type=str, default='config_file/gda_config.json')
     args = parser.parse_args()
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    args.n_gpu = torch.cuda.device_count()
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    # args.n_gpu = torch.cuda.device_count()
     args.device = device
     # print(args.model_name_or_path)
     bert_config = AutoConfig.from_pretrained(
