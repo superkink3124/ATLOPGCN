@@ -242,7 +242,7 @@ def read_gda(file_in, tokenizer, max_seq_length=1024):
                         relation[mention["relation"]] = 1
                     relations.append(relation)
                     hts.append([h, t])
-            if len(sents) > 1020:
+            if len(sents) > max_seq_length - 4:
                 continue
             maxlen = max(maxlen, len(sents))
             sents = sents[:max_seq_length - 2]
