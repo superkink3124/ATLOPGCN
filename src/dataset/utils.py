@@ -130,7 +130,7 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
             input_ids = tokenizer.convert_tokens_to_ids(sents)
             input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
             entity_pos = [[(mention[0] + 1, mention[1] + 1) for mention in list_mention] for list_mention in entity_pos]
-            sent_pos = [[(pos[0] + 1, pos[1] + 1)] for pos in sent_pos]
+            sent_pos = [(pos[0] + 1, pos[1] + 1) for pos in sent_pos]
 
             ner_labels = []
             for i in range(len(input_ids)):
@@ -158,7 +158,6 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                     ner_labels.append(f'I_{type_e}')
                     continue
                 ner_labels.append('O')
-            print(ner_labels)
 
             if len(hts) > 0:
                 feature = {'input_ids': input_ids,
