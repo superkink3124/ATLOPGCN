@@ -58,16 +58,16 @@ class GraphBuilder:
             u.append(edge_u[edge_id])
             v.append(get_new_entity_id(edge_v[edge_id]))
             if self.create_undirected_edges:
-                u.append(edge_u[edge_id])
-                v.append(get_new_entity_id(edge_v[edge_id]))
+                v.append(edge_u[edge_id])
+                u.append(get_new_entity_id(edge_v[edge_id]))
 
         edge_u, edge_v = entity_to_sentence_edges
         for edge_id in range(len(edge_u)):
             u.append(get_new_entity_id(edge_u[edge_id]))
             v.append(get_new_sent_id(edge_v[edge_id]))
             if self.create_undirected_edges:
-                u.append(get_new_entity_id(edge_u[edge_id]))
-                v.append(get_new_sent_id(edge_v[edge_id]))
+                v.append(get_new_entity_id(edge_u[edge_id]))
+                u.append(get_new_sent_id(edge_v[edge_id]))
 
         for edge_id in range(len(u)):
             assert u[edge_id] != v[edge_id], f"Exist self edge {u[edge_id]} to {v[edge_id]}"
