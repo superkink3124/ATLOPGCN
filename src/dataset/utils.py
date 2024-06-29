@@ -25,12 +25,10 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
         for i_l, line in enumerate(tqdm(lines)):
             line = line.rstrip().split('\t')
             pmid = line[0]
-
             if pmid not in pmids:
                 pmids.add(pmid)
                 text = line[1]
                 prs = chunks(line[2:], 17)
-
                 ent2idx = {}
                 train_triples = {}
 
@@ -40,8 +38,8 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                     es = list(map(int, p[8].split(':')))
                     ed = list(map(int, p[9].split(':')))
                     tpy = p[7]
-                    # print(es)
-                    # print(ed)
+                    #                 print(es)
+                    #                 print(ed)
                     for start, end in zip(es, ed):
                         entity_pos.add((start, end, tpy))
                         # print((start, end, tpy))
@@ -82,6 +80,7 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                     new_sents.append('[/SENT]')
                 sents = new_sents
                 entity_pos = []
+                entity_type = []
                 for p in prs:
                     if p[0] == "not_include":
                         continue
@@ -89,10 +88,12 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                         h_id, t_id = p[5], p[11]
                         h_start, t_start = p[8], p[14]
                         h_end, t_end = p[9], p[15]
+                        h_type, t_type = p[7], p[13]
                     else:
                         t_id, h_id = p[5], p[11]
                         t_start, h_start = p[8], p[14]
                         t_end, h_end = p[9], p[15]
+                        t_type, h_type = p[7], p[13]
                     # print(h_id, t_id, h_start, t_start, h_end, t_end)
                     h_start = map(int, h_start.split(':'))
                     h_end = map(int, h_end.split(':'))
@@ -105,33 +106,64 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                     if h_id not in ent2idx:
                         ent2idx[h_id] = len(ent2idx)
                         entity_pos.append(list(zip(h_start, h_end)))
+                        entity_type.append(h_type)
                     if t_id not in ent2idx:
                         ent2idx[t_id] = len(ent2idx)
                         entity_pos.append(list(zip(t_start, t_end)))
-                    h_id, t_id = ent2idx[h_id], ent2idx[t_id]
+                        entity_type.append(t_type)
 
+                    h_id, t_id = ent2idx[h_id], ent2idx[t_id]
                     r = cdr_rel2id[p[0]]
                     if (h_id, t_id) not in train_triples:
                         train_triples[(h_id, t_id)] = [{'relation': r}]
                     else:
                         train_triples[(h_id, t_id)].append({'relation': r})
-                # print(ent2idx)
                 relations, hts = [], []
                 for h, t in train_triples.keys():
                     relation = [0] * len(cdr_rel2id)
                     for mention in train_triples[h, t]:
                         relation[mention["relation"]] = 1
-                    # print(h, t, rel)
                     relations.append(relation)
                     hts.append([h, t])
-
             maxlen = max(maxlen, len(sents))
             sents = sents[:max_seq_length - 2]
             input_ids = tokenizer.convert_tokens_to_ids(sents)
             input_ids = tokenizer.build_inputs_with_special_tokens(input_ids)
+            entity_pos = [[(mention[0] + 1, mention[1] + 1) for mention in list_mention] for list_mention in entity_pos]
+            sent_pos = [[(pos[0] + 1, pos[1] + 1)] for pos in sent_pos]
+
+            ner_labels = []
+            for i in range(len(input_ids)):
+                begin_e = False
+                in_e = False
+                type_e = None
+                found = False
+                for idx, list_pos in enumerate(entity_pos):
+                    for pos in list_pos:
+                        if i == pos[0]:
+                            begin_e = True
+                            found = True
+                            type_e = entity_type[idx]
+                            break
+                        if pos[0] <= i < pos[1]:
+                            in_e = True
+                            found = True
+                            type_e = entity_type[idx]
+                    if found:
+                        break
+                if begin_e:
+                    ner_labels.append(f'B_{type_e}')
+                    continue
+                if in_e:
+                    ner_labels.append(f'I_{type_e}')
+                    continue
+                ner_labels.append('O')
+            print(ner_labels)
+
             if len(hts) > 0:
                 feature = {'input_ids': input_ids,
                            'entity_pos': entity_pos,
+                           'ner_labels': ner_labels,
                            'labels': relations,
                            'hts': hts,
                            'title': pmid,
@@ -242,7 +274,8 @@ def read_gda(file_in, tokenizer, max_seq_length=1024):
                         relation[mention["relation"]] = 1
                     relations.append(relation)
                     hts.append([h, t])
-
+            if len(sents) > 1020:
+                continue
             maxlen = max(maxlen, len(sents))
             sents = sents[:max_seq_length - 2]
             input_ids = tokenizer.convert_tokens_to_ids(sents)
@@ -250,11 +283,11 @@ def read_gda(file_in, tokenizer, max_seq_length=1024):
 
             if len(hts) > 0:
                 feature = {'input_ids': input_ids,
-                           'entity_pos': entity_pos,
+                           'entity_pos': [[pos for pos in list_pos if pos[1] < len(sents)] for list_pos in entity_pos],
                            'labels': relations,
                            'hts': hts,
                            'title': pmid,
-                           'sent_pos': sent_pos
+                           'sent_pos': [pos for pos in sent_pos if pos[1] < len(sents)]
                            }
                 features.append(feature)
     print("Number of documents: {}.".format(len(features)))

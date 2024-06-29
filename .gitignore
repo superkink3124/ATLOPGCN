@@ -7,5 +7,9 @@ data/prepared_data/**/*.json
 data/cdr
 src/experiments
 src/debug
-dataset/**/*.json
-dataset/**/*.data
+**/.ipynb_checkpoints/
+dataset
+!dataset/**/.keep
+!dataset/meta
+src/experiments_cdr
+!src/experiments_cdr/.keep
