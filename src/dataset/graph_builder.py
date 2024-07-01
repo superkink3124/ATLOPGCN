@@ -7,7 +7,7 @@ import torch
 
 class GraphBuilder:
     def __init__(self,
-                 create_undirected_edges: bool = True,
+                 create_undirected_edges: bool = False,
                  add_self_edge: bool = True):
         self.create_undirected_edges = create_undirected_edges
         self.add_self_edge = add_self_edge

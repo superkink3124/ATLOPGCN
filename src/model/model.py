@@ -13,8 +13,10 @@ class ATLOPGCN(nn.Module):
     def __init__(self, config: ModelConfig,
                  # bert_config,
                  bert_model: PreTrainedModel, device: torch.device,
-                 emb_size=768, block_size=64):
+                 emb_size=768, block_size=64, use_ner: bool = False):
         super().__init__()
+        self.config = config
+        self.use_ner = use_ner
         self.device = device
         bert_config = bert_model.config
         self.bert_config = bert_config
@@ -28,9 +30,14 @@ class ATLOPGCN(nn.Module):
         self.emb_size = emb_size
         self.block_size = block_size
         self.num_labels = config.classifier.num_classes
-        self.offset = 1
+        self.offset = 0
         self.gnn = GNN(config.gnn, bert_config.hidden_size + config.gnn.node_type_embedding, device)
 
+        if self.use_ner:
+            self.ner_hidden_layer = nn.Linear(bert_config.hidden_size, config.ner_classifier.hidden_dim)
+            self.ner_activation = nn.LeakyReLU()
+            self.ner_classifier = nn.Linear(config.ner_classifier.hidden_dim, config.ner_classifier.ner_classes)
+            self.ner_loss_func = nn.CrossEntropyLoss()
         self.loss_fnt = ATLoss()
 
     def encode(self, input_ids, attention_mask):
@@ -43,7 +50,8 @@ class ATLOPGCN(nn.Module):
             end_tokens = [config.sep_token_id, config.sep_token_id]
         else:
             raise NotImplementedError()
-        sequence_output, attention = process_long_input(self.bert_model, input_ids, attention_mask, start_tokens, end_tokens)
+        sequence_output, attention = process_long_input(self.bert_model, input_ids,
+                                                        attention_mask, start_tokens, end_tokens)
         return sequence_output, attention
 
     def get_sent_embed(self, sequence_output, batch_sent_pos, num_sent):
@@ -123,10 +131,13 @@ class ATLOPGCN(nn.Module):
         t_embed = torch.stack(t_embed, dim=0)
         return s_embed, t_embed
 
+    def get_ner_logits(self, hidden_state):
+        return self.ner_classifier(self.ner_activation(self.ner_hidden_layer(hidden_state)))
+
     def forward(self, input_ids, attention_mask,
                 entity_pos, sent_pos,
                 graph, num_mention, num_entity, num_sent,
-                labels=None, hts=None):
+                labels=None, ner_labels=None, hts=None):
         sequence_output, attention = self.encode(input_ids, attention_mask)
         mention_embed = self.get_mention_embed(sequence_output, entity_pos, num_mention)
         entity_embed = self.get_entity_embed(sequence_output, entity_pos, num_entity)
@@ -142,11 +153,16 @@ class ATLOPGCN(nn.Module):
         b2 = t_embed.view(-1, self.emb_size // self.block_size, self.block_size)
         bl = (b1.unsqueeze(3) * b2.unsqueeze(2)).view(-1, self.emb_size * self.block_size)
         logits = self.bilinear(bl)
-
         output = (self.loss_fnt.get_label(logits, num_labels=self.num_labels),)
         if labels is not None:
             labels = [torch.tensor(label) for label in labels]
             labels = torch.cat(labels, dim=0).to(logits)
             loss = self.loss_fnt(logits.float(), labels.float())
             output = (loss.to(sequence_output),) + output
+            if self.use_ner:
+                ner_logits = self.get_ner_logits(sequence_output)
+                ner_logits = ner_logits.view(-1, self.config.ner_classifier.ner_classes)
+                ner_labels = ner_labels.view(-1)
+                ner_loss = self.ner_loss_func(ner_logits, ner_labels)
+                output = (ner_loss, ) + output
         return output

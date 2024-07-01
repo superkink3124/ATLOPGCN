@@ -43,7 +43,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                     input_ids, input_mask,
                     entity_pos, sent_pos,
                     graph, num_mention, num_entity, num_sent,
-                    labels, hts
+                    labels, ner_labels, hts
                 ) = batch
                 inputs = {'input_ids': input_ids.to(args.device),
                           'attention_mask': input_mask.to(args.device),
@@ -54,10 +54,14 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                           'num_entity': num_entity,
                           'num_sent': num_sent,
                           'labels': labels,
+                          'ner_labels': ner_labels.to(args.device),
                           'hts': hts,
                           }
                 outputs = model(**inputs)
-                loss = outputs[0] / args.gradient_accumulation_steps
+                if model.use_ner:
+                    loss = (outputs[0] + outputs[1]) / args.gradient_accumulation_steps
+                else:
+                    loss = outputs[0] / args.gradient_accumulation_steps
                 loss.backward()
                 # with amp.scale_loss(loss, optimizer) as scaled_loss:
                 #     scaled_loss.backward()
@@ -70,7 +74,10 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                     num_steps += 1
                 # wandb.log({"loss": loss.item()}, step=num_steps)
                 if step % 100 == 0:
-                    logger.info(loss)
+                    if model.use_ner:
+                        logger.info(f"{outputs[0]}, {outputs[1]}")
+                    else:
+                        logger.info(outputs[0])
                 # if ((step + 1) == len(train_dataloader) - 1 or
                 #         (args.evaluation_steps > 0 and num_steps % args.evaluation_steps == 0 and
                 #          step % args.gradient_accumulation_steps == 0)):
@@ -112,7 +119,7 @@ def evaluate(args, model, features, tag="dev"):
             input_ids, input_mask,
             entity_pos, sent_pos,
             graph, num_mention, num_entity, num_sent,
-            labels, hts
+            labels, ner_labels, hts
         ) = batch
         inputs = {'input_ids': input_ids.to(args.device),
                   'attention_mask': input_mask.to(args.device),
@@ -122,6 +129,7 @@ def evaluate(args, model, features, tag="dev"):
                   'num_mention': num_mention,
                   'num_entity': num_entity,
                   'num_sent': num_sent,
+                  'ner_labels': ner_labels,
                   'hts': hts,
                   }
 
@@ -131,7 +139,6 @@ def evaluate(args, model, features, tag="dev"):
             pred[np.isnan(pred)] = 0
             preds.append(pred)
             golds.append(np.concatenate([np.array(label, np.float32) for label in labels], axis=0))
-    # print(preds)
     preds = np.concatenate(preds, axis=0).astype(np.float32)
     golds = np.concatenate(golds, axis=0).astype(np.float32)
 
@@ -221,10 +228,9 @@ def main():
     parser.add_argument("--num_class", type=int, default=2,
                         help="Number of relation types in dataset.")
     parser.add_argument('--config_path', type=str, default='config_file/cdr_config.json')
-
+    parser.add_argument('--use_ner', action="store_true")
     args = parser.parse_args()
     # wandb.init(project="CDR")
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     args.n_gpu = torch.cuda.device_count()
     args.device = device
@@ -263,8 +269,7 @@ def main():
 
     config_path = args.config_path
     config = RunConfig.from_json(config_path)
-    model = ATLOPGCN(config.model, bert_model, device)
-
+    model = ATLOPGCN(config.model, bert_model, device, use_ner=args.use_ner)
     experiment_dir = setup_experiment_dir(config, tokenizer, bert_model)
     logger = get_logger(os.path.join(experiment_dir, 'log.txt'))
     model.to(device)
