@@ -122,7 +122,9 @@ def evaluate(args, model, features, tag="dev"):
             input_ids, input_mask,
             entity_pos, sent_pos,
             graph, num_mention, num_entity, num_sent,
-            labels, ner_labels, hts
+            labels, ner_labels,
+            entity_type, entity_mask,
+            hts
         ) = batch
         inputs = {'input_ids': input_ids.to(args.device),
                   'attention_mask': input_mask.to(args.device),
@@ -132,12 +134,16 @@ def evaluate(args, model, features, tag="dev"):
                   'num_mention': num_mention,
                   'num_entity': num_entity,
                   'num_sent': num_sent,
-                  'ner_labels': ner_labels,
+                  'labels': labels,
+                  'ner_labels': ner_labels.to(args.device),
+                  "entity_type": entity_type.to(args.device),
+                  "entity_mask": entity_mask.to(args.device),
                   'hts': hts,
                   }
 
         with torch.no_grad():
-            pred, *_ = model(**inputs)
+            outputs = model(**inputs)
+            pred = outputs["label"]
             pred = pred.cpu().numpy()
             pred[np.isnan(pred)] = 0
             preds.append(pred)
