@@ -100,6 +100,8 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
     finetune(train_features, optimizer, args.num_train_epochs, num_steps)
     test_score, test_output = evaluate(args, model, test_features, tag="test")
     logger.info(f"Test output: {test_output} ")
+    with open('result_cdr.txt', 'a') as outfile:
+        outfile.write(f'{str(test_output)}\n')
 
 
 def evaluate(args, model, features, tag="dev"):
