@@ -8,7 +8,8 @@ data/cdr
 src/experiments
 src/debug
 **/.ipynb_checkpoints/
-dataset
+dataset/gda
+dataset/docred
 !dataset/**/.keep
 !dataset/meta
 src/experiments_cdr
