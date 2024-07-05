@@ -42,41 +42,19 @@ class ClassifierConfig(BaseConfig):
                                 d['drop_out'])
 
 
-class NERClassifierConfig(BaseConfig):
-    required_arguments = {
-        "hidden_dim", "ner_classes"
-    }
-
-    def __init__(self, hidden_dim, ner_classes):
-        self.hidden_dim = hidden_dim
-        self.ner_classes = ner_classes
-
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "NERClassifierConfig":
-        cls.check_required(d)
-        return NERClassifierConfig(d['hidden_dim'], d['ner_classes'])
-
-
 class ModelConfig(BaseConfig):
     required_arguments = {"gnn",
                           "classifier",
-                          "use_ner",
                           "ner_classifier"}
 
     def __init__(self,
                  gnn: GNNConfig,
-                 ner_classifier: NERClassifierConfig,
-                 classifier: ClassifierConfig,
-                 use_ner: bool):
+                 classifier: ClassifierConfig):
         self.gnn = gnn
-        self.ner_classifier = ner_classifier
         self.classifier = classifier
-        self.use_ner = use_ner
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ModelConfig":
         cls.check_required(d)
         return ModelConfig(GNNConfig.from_dict(d['gnn']),
-                           NERClassifierConfig.from_dict(d['ner_classifier']),
-                           ClassifierConfig.from_dict(d['classifier']),
-                           d['use_ner'])
+                           ClassifierConfig.from_dict(d['classifier']))
