@@ -162,6 +162,7 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
             if len(hts) > 0:
                 feature = {'input_ids': input_ids,
                            'entity_pos': entity_pos,
+                           'entity_type': entity_type,
                            'ner_labels': ner_labels,
                            'labels': relations,
                            'hts': hts,

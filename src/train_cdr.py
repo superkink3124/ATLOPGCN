@@ -43,7 +43,9 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                     input_ids, input_mask,
                     entity_pos, sent_pos,
                     graph, num_mention, num_entity, num_sent,
-                    labels, ner_labels, hts
+                    labels, ner_labels,
+                    entity_type, entity_mask,
+                    hts
                 ) = batch
                 inputs = {'input_ids': input_ids.to(args.device),
                           'attention_mask': input_mask.to(args.device),
@@ -55,29 +57,29 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                           'num_sent': num_sent,
                           'labels': labels,
                           'ner_labels': ner_labels.to(args.device),
+                          "entity_type": entity_type.to(args.device),
+                          "entity_mask": entity_mask.to(args.device),
                           'hts': hts,
                           }
                 outputs = model(**inputs)
-                if model.use_ner:
-                    loss = (outputs[0] + outputs[1]) / args.gradient_accumulation_steps
+                if model.use_ner and model.use_entity_classify:
+                    loss = (outputs["loss"] + outputs["ner_loss"] + outputs["entity_classify_loss"]) / args.gradient_accumulation_steps
+                elif model.use_ner:
+                    loss = (outputs["loss"] + outputs["ner_loss"]) / args.gradient_accumulation_steps
+                elif model.use_entity_classify:
+                    loss = (outputs["loss"] + outputs["entity_classify_loss"]) / args.gradient_accumulation_steps
                 else:
-                    loss = outputs[0] / args.gradient_accumulation_steps
+                    loss = outputs["loss"] / args.gradient_accumulation_steps
                 loss.backward()
-                # with amp.scale_loss(loss, optimizer) as scaled_loss:
-                #     scaled_loss.backward()
+
                 if step % args.gradient_accumulation_steps == 0:
-                    # if args.max_grad_norm > 0:
-                    #     torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
                     optimizer.step()
                     scheduler.step()
                     model.zero_grad()
                     num_steps += 1
                 # wandb.log({"loss": loss.item()}, step=num_steps)
                 if step % 100 == 0:
-                    if model.use_ner:
-                        logger.info(f"{outputs[0]}, {outputs[1]}")
-                    else:
-                        logger.info(outputs[0])
+                    logger.info(outputs)
                 # if ((step + 1) == len(train_dataloader) - 1 or
                 #         (args.evaluation_steps > 0 and num_steps % args.evaluation_steps == 0 and
                 #          step % args.gradient_accumulation_steps == 0)):
@@ -230,6 +232,7 @@ def main():
                         help="Number of relation types in dataset.")
     parser.add_argument('--config_path', type=str, default='config_file/cdr_config.json')
     parser.add_argument('--use_ner', action="store_true")
+    parser.add_argument('--use_entity_classify', action="store_true")
     args = parser.parse_args()
     # wandb.init(project="CDR")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -270,7 +273,8 @@ def main():
 
     config_path = args.config_path
     config = RunConfig.from_json(config_path)
-    model = ATLOPGCN(config.model, bert_model, device, use_ner=args.use_ner)
+    model = ATLOPGCN(config.model, bert_model, device, use_ner=args.use_ner,
+                     use_entity_classify=args.use_entity_classify)
     experiment_dir = setup_experiment_dir(config, tokenizer, bert_model)
     logger = get_logger(os.path.join(experiment_dir, 'log.txt'))
     model.to(device)
