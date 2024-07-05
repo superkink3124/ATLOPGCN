@@ -106,6 +106,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
     model.zero_grad()
     finetune(train_features, optimizer, args.num_train_epochs, num_steps)
     test_score, test_output = evaluate(args, model, test_features, tag="test")
+    logger.info(f"Test score: {test_score} ")
     logger.info(f"Test output: {test_output} ")
 
 
@@ -179,7 +180,7 @@ def setup_experiment_dir(config, tokenizer, bert_model):
     with open(f"{experiment_dir}/config.json", "w") as outfile:
         outfile.write(str(config))
     tokenizer.save_pretrained(f'{experiment_dir}')
-    bert_model.save_pretrained(f'{experiment_dir}')
+    # bert_model.save_pretrained(f'{experiment_dir}')
     return experiment_dir
 
 
