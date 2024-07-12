@@ -44,8 +44,7 @@ class ClassifierConfig(BaseConfig):
 
 class ModelConfig(BaseConfig):
     required_arguments = {"gnn",
-                          "classifier",
-                          "ner_classifier"}
+                          "classifier"}
 
     def __init__(self,
                  gnn: GNNConfig,

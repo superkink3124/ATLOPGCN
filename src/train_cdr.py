@@ -16,7 +16,6 @@ from config.run_config import RunConfig
 from model.model import ATLOPGCN
 from dataset.collator import collate_fn
 from dataset.utils import read_cdr
-# import wandb
 from tqdm import tqdm
 
 
@@ -42,6 +41,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                 (
                     input_ids, input_mask,
                     entity_pos, sent_pos,
+                    cr_matrix, cr_mask,
                     graph, num_mention, num_entity, num_sent,
                     labels, ner_labels,
                     entity_type, entity_mask,
@@ -51,6 +51,8 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                           'attention_mask': input_mask.to(args.device),
                           'entity_pos': entity_pos,
                           'sent_pos': sent_pos,
+                          'cr_matrix': cr_matrix.to(args.device),
+                          'cr_mask': cr_mask.to(args.device),
                           'graph': graph.to(args.device),
                           'num_mention': num_mention,
                           'num_entity': num_entity,
@@ -62,14 +64,17 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                           'hts': hts,
                           }
                 outputs = model(**inputs)
-                if model.use_ner and model.use_entity_classify:
-                    loss = (outputs["loss"] + outputs["ner_loss"] + outputs["entity_classify_loss"]) / args.gradient_accumulation_steps
-                elif model.use_ner:
-                    loss = (outputs["loss"] + outputs["ner_loss"]) / args.gradient_accumulation_steps
-                elif model.use_entity_classify:
-                    loss = (outputs["loss"] + outputs["entity_classify_loss"]) / args.gradient_accumulation_steps
-                else:
-                    loss = outputs["loss"] / args.gradient_accumulation_steps
+                # if model.use_ner and model.use_entity_classify:
+                #     loss = (outputs["loss"] + outputs["ner_loss"] + outputs["entity_classify_loss"]) / args.gradient_accumulation_steps
+                # elif model.use_ner:
+                #     loss = (outputs["loss"] + outputs["ner_loss"]) / args.gradient_accumulation_steps
+                # elif model.use_entity_classify:
+                #     loss = (outputs["loss"] + outputs["entity_classify_loss"]) / args.gradient_accumulation_steps
+                # else:
+                #     loss = outputs["loss"] / args.gradient_accumulation_steps
+                # loss = (outputs["loss"] + outputs["cr_loss"]) / args.gradient_accumulation_steps
+                # loss = (outputs["loss"] + outputs["cr_loss"] + outputs["ec_loss"]) / args.gradient_accumulation_steps
+                loss = outputs["loss"] / args.gradient_accumulation_steps
                 loss.backward()
 
                 if step % args.gradient_accumulation_steps == 0:
@@ -79,6 +84,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                     num_steps += 1
                 # wandb.log({"loss": loss.item()}, step=num_steps)
                 if step % 100 == 0:
+                    outputs.pop("label")
                     logger.info(outputs)
                 # if ((step + 1) == len(train_dataloader) - 1 or
                 #         (args.evaluation_steps > 0 and num_steps % args.evaluation_steps == 0 and
@@ -101,8 +107,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
         {"params": [p for n, p in model.named_parameters() if not any(nd in n for nd in new_layer)], },
         {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in new_layer)], "lr": 1e-4},
     ]
-    optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
-    # model, optimizer = amp.initialize(model, optimizer, opt_level="O1", verbosity=0)
+    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
     num_steps = 0
     set_seed(args.seed)
     model.zero_grad()
@@ -121,6 +126,7 @@ def evaluate(args, model, features, tag="dev"):
         (
             input_ids, input_mask,
             entity_pos, sent_pos,
+            cr_matrix, cr_mask,
             graph, num_mention, num_entity, num_sent,
             labels, ner_labels,
             entity_type, entity_mask,
@@ -130,6 +136,8 @@ def evaluate(args, model, features, tag="dev"):
                   'attention_mask': input_mask.to(args.device),
                   'entity_pos': entity_pos,
                   'sent_pos': sent_pos,
+                  'cr_matrix': cr_matrix.to(args.device),
+                  'cr_mask': cr_mask.to(args.device),
                   'graph': graph.to(args.device),
                   'num_mention': num_mention,
                   'num_entity': num_entity,
@@ -194,7 +202,6 @@ def setup_experiment_dir(config, tokenizer, bert_model):
 
 def main():
     parser = argparse.ArgumentParser()
-
     parser.add_argument("--data_dir", default="../data/cdr", type=str)
     parser.add_argument("--transformer_type", default="bert", type=str)
     parser.add_argument("--model_name_or_path", default="allenai/scibert_scivocab_cased", type=str)
@@ -240,14 +247,13 @@ def main():
     parser.add_argument('--use_ner', action="store_true")
     parser.add_argument('--use_entity_classify', action="store_true")
     args = parser.parse_args()
-    # wandb.init(project="CDR")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f'Device: {device}')
     args.n_gpu = torch.cuda.device_count()
     args.device = device
-    # print(args.model_name_or_path)
+
     bert_config = AutoConfig.from_pretrained(
         args.model_name_or_path,
-        num_labels=args.num_class,
     )
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_name_or_path,
@@ -279,8 +285,11 @@ def main():
 
     config_path = args.config_path
     config = RunConfig.from_json(config_path)
-    model = ATLOPGCN(config.model, bert_model, device, use_ner=args.use_ner,
+
+    model = ATLOPGCN(config.model, bert_model, device,
+                     use_ner=args.use_ner,
                      use_entity_classify=args.use_entity_classify)
+
     experiment_dir = setup_experiment_dir(config, tokenizer, bert_model)
     logger = get_logger(os.path.join(experiment_dir, 'log.txt'))
     model.to(device)

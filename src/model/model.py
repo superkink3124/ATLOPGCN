@@ -1,6 +1,9 @@
 import torch
+import torch.nn.functional as F
+import torch.nn.init as init
 from torch import nn
 from transformers import AutoModel, PreTrainedModel
+import math
 
 from config.model_config import ModelConfig
 from model.utils import process_long_input
@@ -9,11 +12,68 @@ from opt_einsum import contract
 from model.losses import ATLoss
 
 
+def focal_loss(pred, target, mask, alpha=0.25, gamma=2.0):
+    """
+    Compute focal loss for binary classification.
+
+    :param pred: Predicted probabilities, shape (b, n, n)
+    :param target: Ground truth labels, shape (b, n, n)
+    :param mask: Mask for valid pairs, shape (b, n, n)
+    :param alpha: Weighting factor for class 1
+    :param gamma: Focusing parameter
+    :return: Scalar focal loss value
+    """
+    # Apply mask to predictions and targets
+    pred = torch.sigmoid(pred)
+    pred = pred * mask
+    target = target * mask
+
+    # Calculate the binary cross-entropy loss
+    bce_loss = F.binary_cross_entropy(pred, target, reduction='none')
+
+    # Calculate focal loss components
+    p_t = target * pred + (1 - target) * (1 - pred)
+    alpha_t = target * alpha + (1 - target) * (1 - alpha)
+    focal_loss = alpha_t * (1 - p_t) ** gamma * bce_loss
+
+    # Apply mask to focal loss and sum
+    focal_loss = focal_loss * mask
+    loss = focal_loss.sum() / mask.sum()
+
+    return loss
+
+
+class PairwiseBilinear(nn.Module):
+    def __init__(self, d):
+        super(PairwiseBilinear, self).__init__()
+        self.W = nn.Parameter(torch.Tensor(d, d))
+        self.bias = nn.Parameter(torch.Tensor(1))
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        """
+        Initialize the weights and bias similar to nn.Bilinear
+        """
+        init.kaiming_uniform_(self.W, a=math.sqrt(5))
+        fan_in, _ = init._calculate_fan_in_and_fan_out(self.W)
+        bound = 1 / math.sqrt(fan_in)
+        init.uniform_(self.bias, -bound, bound)
+
+    def forward(self, x):
+        """
+        Compute the pairwise bilinear form with bias.
+
+        :param x: Input tensor of shape (b, n, d)
+        :return: Pairwise bilinear tensor of shape (b, n, n)
+        """
+        bilinear_form = torch.einsum('bnd,de,bme->bmn', x, self.W, x) + self.bias
+        return bilinear_form
+
+
 class ATLOPGCN(nn.Module):
     def __init__(self, config: ModelConfig,
-                 # bert_config,
                  bert_model: PreTrainedModel, device: torch.device,
-                 emb_size=768, block_size=64, use_ner: bool = False, use_entity_classify: bool = False):
+                 emb_size=768, block_size=64, use_ner: bool = False, use_entity_classify: bool = True):
         super().__init__()
         self.use_entity_classify = use_entity_classify
         self.config = config
@@ -24,21 +84,24 @@ class ATLOPGCN(nn.Module):
         self.bert_model = bert_model
         self.hidden_size = bert_config.hidden_size
 
+        self.cr_bilinear = PairwiseBilinear(bert_config.hidden_size + config.gnn.node_type_embedding)
+
         self.head_extractor = nn.Linear(2 * bert_config.hidden_size + config.gnn.node_type_embedding, emb_size)
         self.tail_extractor = nn.Linear(2 * bert_config.hidden_size + config.gnn.node_type_embedding, emb_size)
-        self.bilinear = nn.Linear(emb_size * block_size, bert_config.num_labels)
 
         self.emb_size = emb_size
         self.block_size = block_size
         self.num_labels = config.classifier.num_classes
+
+        self.bilinear = nn.Linear(emb_size * block_size, self.num_labels)
         self.offset = 0
         self.gnn = GNN(config.gnn, bert_config.hidden_size + config.gnn.node_type_embedding, device)
 
-        if self.use_ner:
-            self.ner_hidden_layer = nn.Linear(bert_config.hidden_size, config.ner_classifier.hidden_dim)
-            self.ner_activation = nn.LeakyReLU()
-            self.ner_classifier = nn.Linear(config.ner_classifier.hidden_dim, config.ner_classifier.ner_classes)
-            self.ner_loss_func = nn.CrossEntropyLoss()
+        # if self.use_ner:
+        #     self.ner_hidden_layer = nn.Linear(bert_config.hidden_size, config.ner_classifier.hidden_dim)
+        #     self.ner_activation = nn.LeakyReLU()
+        #     self.ner_classifier = nn.Linear(config.ner_classifier.hidden_dim, config.ner_classifier.ner_classes)
+        #     self.ner_loss_func = nn.CrossEntropyLoss()
 
         if self.use_entity_classify:
             self.entity_classifier = nn.Linear(bert_config.hidden_size + config.gnn.node_type_embedding, 2)
@@ -142,6 +205,7 @@ class ATLOPGCN(nn.Module):
 
     def forward(self, input_ids, attention_mask,
                 entity_pos, sent_pos,
+                cr_matrix, cr_mask,
                 graph, num_mention, num_entity, num_sent,
                 labels=None, ner_labels=None,
                 entity_type=None, entity_mask=None,
@@ -150,7 +214,10 @@ class ATLOPGCN(nn.Module):
         mention_embed = self.get_mention_embed(sequence_output, entity_pos, num_mention)
         entity_embed = self.get_entity_embed(sequence_output, entity_pos, num_entity)
         sent_embed = self.get_sent_embed(sequence_output, sent_pos, num_sent)
-        entity_hidden_state = self.gnn([mention_embed, entity_embed, sent_embed, graph])
+        entity_hidden_state, mention_hidden_state = self.gnn([mention_embed, entity_embed, sent_embed, graph])
+
+        cr_preds = self.cr_bilinear(mention_hidden_state)
+        cr_loss = focal_loss(cr_preds, cr_matrix, cr_mask)
 
         local_context = self.get_rss(sequence_output, attention, entity_pos, hts)
         s_embed, t_embed = self.get_pair_entity_embed(entity_hidden_state, hts)
@@ -163,8 +230,17 @@ class ATLOPGCN(nn.Module):
         bl = (b1.unsqueeze(3) * b2.unsqueeze(2)).view(-1, self.emb_size * self.block_size)
         logits = self.bilinear(bl)
         output = {
-            "label": self.loss_fnt.get_label(logits, num_labels=self.num_labels)
+            "label": self.loss_fnt.get_label(logits, num_labels=self.num_labels),
+            "cr_loss": cr_loss
         }
+        if self.use_entity_classify:
+            entity_logits = self.entity_classifier(entity_hidden_state)
+            entity_logits = entity_logits.view(-1, 2)
+            entity_type = entity_type.view(-1)
+            entity_mask = entity_mask.view(-1)
+            entity_classify_loss = self.entity_classify_loss_func(entity_logits, entity_type) * entity_mask
+            entity_classify_loss = entity_classify_loss.sum() / entity_mask.sum()
+            output["ec_loss"] = entity_classify_loss
         if labels is not None:
             labels = [torch.tensor(label) for label in labels]
             labels = torch.cat(labels, dim=0).to(logits)
@@ -176,12 +252,4 @@ class ATLOPGCN(nn.Module):
                 ner_labels = ner_labels.view(-1)
                 ner_loss = self.ner_loss_func(ner_logits, ner_labels)
                 output["ner_loss"] = ner_loss
-            if self.use_entity_classify:
-                entity_logits = self.entity_classifier(entity_hidden_state)
-                entity_logits = entity_logits.view(-1, 2)
-                entity_type = entity_type.view(-1)
-                entity_mask = entity_mask.view(-1)
-                entity_classify_loss = self.entity_classify_loss_func(entity_logits, entity_type) * entity_mask
-                entity_classify_loss = entity_classify_loss.sum() / entity_mask.sum()
-                output["entity_classify_loss"] = entity_classify_loss
         return output
