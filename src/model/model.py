@@ -70,12 +70,44 @@ class PairwiseBilinear(nn.Module):
         return bilinear_form
 
 
+def new_cr_loss_fc(entity_new_cr_logits, entity_new_cr_labels, entity_mask,
+                    sent_new_cr_logits, sent_have_one_enity, sent_have_one_enity_mask, new_cr_loss_func):
+
+
+    # print(entity_new_cr_logits.size())
+    # print(entity_mask.size())
+
+    # print(sent_new_cr_logits.size())
+    # print(sent_have_one_enity.size())
+    # print(sent_have_one_enity_mask.size())
+    # print(dd)
+
+    entity_new_cr_logits = entity_new_cr_logits.view(-1, 3)
+    entity_new_cr_labels = entity_new_cr_labels.view(-1)
+    entity_mask = entity_mask.view(-1)
+
+    loss_1 = new_cr_loss_func(entity_new_cr_logits, entity_new_cr_labels) * entity_mask
+    loss_1 = loss_1.sum() / entity_mask.sum()
+
+    sent_new_cr_logits = sent_new_cr_logits.view(-1, 3)
+    sent_have_one_enity = sent_have_one_enity.view(-1)
+    sent_have_one_enity_mask = sent_have_one_enity_mask.view(-1)
+
+    loss_2 = new_cr_loss_func(sent_new_cr_logits, sent_have_one_enity) * sent_have_one_enity_mask
+    loss_2 = loss_2.sum() / sent_have_one_enity_mask.sum()
+
+    return loss_1 + loss_2
+
+
 class ATLOPGCN(nn.Module):
     def __init__(self, config: ModelConfig,
                  bert_model: PreTrainedModel, device: torch.device,
-                 emb_size=768, block_size=64, use_ner: bool = False, use_entity_classify: bool = True):
+                 emb_size=768, block_size=64, use_ner: bool = False, 
+                 use_entity_classify: bool = True, use_mention_classify: bool = True, use_new_cr: bool = True):
         super().__init__()
         self.use_entity_classify = use_entity_classify
+        self.use_mention_classify = use_mention_classify
+        self.use_new_cr = use_new_cr
         self.config = config
         self.use_ner = use_ner
         self.device = device
@@ -103,9 +135,12 @@ class ATLOPGCN(nn.Module):
         #     self.ner_classifier = nn.Linear(config.ner_classifier.hidden_dim, config.ner_classifier.ner_classes)
         #     self.ner_loss_func = nn.CrossEntropyLoss()
 
-        if self.use_entity_classify:
-            self.entity_classifier = nn.Linear(bert_config.hidden_size + config.gnn.node_type_embedding, 2)
-            self.entity_classify_loss_func = nn.CrossEntropyLoss(reduction='none')
+        self.entity_classifier = nn.Linear(bert_config.hidden_size + config.gnn.node_type_embedding, 2)
+        self.entity_classify_loss_func = nn.CrossEntropyLoss(reduction='none')
+        self.mention_classifier = nn.Linear(bert_config.hidden_size + config.gnn.node_type_embedding, 2)
+        self.mention_classify_loss_func = nn.CrossEntropyLoss(reduction='none')
+        self.new_cr_classifier = nn.Linear(bert_config.hidden_size + config.gnn.node_type_embedding, 3)
+        self.new_cr_loss_func = nn.CrossEntropyLoss(reduction='none')
 
         self.loss_fnt = ATLoss()
 
@@ -138,7 +173,7 @@ class ATLOPGCN(nn.Module):
             mention_id = 0
             for ent_pos in entity_pos:
                 for mention_pos in ent_pos:
-                    mention_embed[batch_id, mention_id] = sequence_output[batch_id, mention_pos[0] + self.offset]
+                    mention_embed[batch_id, mention_id] = (sequence_output[batch_id, mention_pos[0] + self.offset] + sequence_output[batch_id, mention_pos[-1] + self.offset])/2
                     mention_id += 1
         return mention_embed
 
@@ -209,15 +244,22 @@ class ATLOPGCN(nn.Module):
                 graph, num_mention, num_entity, num_sent,
                 labels=None, ner_labels=None,
                 entity_type=None, entity_mask=None,
+                mention_type=None, mention_mask=None,
+                sent_have_one_enity=None, sent_have_one_enity_mask=None,
+                entity_new_cr_labels=None,
                 hts=None):
         sequence_output, attention = self.encode(input_ids, attention_mask)
         mention_embed = self.get_mention_embed(sequence_output, entity_pos, num_mention)
         entity_embed = self.get_entity_embed(sequence_output, entity_pos, num_entity)
         sent_embed = self.get_sent_embed(sequence_output, sent_pos, num_sent)
-        entity_hidden_state, mention_hidden_state = self.gnn([mention_embed, entity_embed, sent_embed, graph])
+        entity_hidden_state, mention_hidden_state, sent_hidden_state = self.gnn([mention_embed, entity_embed, sent_embed, graph])
 
-        cr_preds = self.cr_bilinear(mention_hidden_state)
-        cr_loss = focal_loss(cr_preds, cr_matrix, cr_mask)
+        # print(sent_hidden_state.size())
+        # print(sent_hidden_state)
+        # print(dd)
+
+        # cr_preds = self.cr_bilinear(mention_hidden_state)
+        # cr_loss = focal_loss(cr_preds, cr_matrix, cr_mask)
 
         local_context = self.get_rss(sequence_output, attention, entity_pos, hts)
         s_embed, t_embed = self.get_pair_entity_embed(entity_hidden_state, hts)
@@ -231,8 +273,26 @@ class ATLOPGCN(nn.Module):
         logits = self.bilinear(bl)
         output = {
             "label": self.loss_fnt.get_label(logits, num_labels=self.num_labels),
-            "cr_loss": cr_loss
+            # "cr_loss": cr_loss
         }
+
+        if self.use_new_cr:
+            entity_new_cr_logits = self.new_cr_classifier(entity_hidden_state)
+            entity_mask_size = entity_mask.size()
+            
+            sent_new_cr_logits = self.new_cr_classifier(sent_hidden_state)
+            new_cr_loss = new_cr_loss_fc(entity_new_cr_logits, entity_new_cr_labels, entity_mask, 
+                                        sent_new_cr_logits, sent_have_one_enity, sent_have_one_enity_mask, 
+                                        self.new_cr_loss_func)
+            output["new_cr_loss"] = new_cr_loss
+        if self.use_mention_classify:
+            mention_logits = self.mention_classifier(mention_hidden_state)
+            mention_logits = mention_logits.view(-1, 2)
+            mention_type = mention_type.view(-1)
+            mention_mask = mention_mask.view(-1)
+            mention_classify_loss = self.mention_classify_loss_func(mention_logits, mention_type) * mention_mask
+            mention_classify_loss = mention_classify_loss.sum() / mention_type.sum()
+            output["mc_loss"] = mention_classify_loss
         if self.use_entity_classify:
             entity_logits = self.entity_classifier(entity_hidden_state)
             entity_logits = entity_logits.view(-1, 2)

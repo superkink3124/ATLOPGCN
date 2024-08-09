@@ -2,6 +2,6 @@ numpy~=1.24.1
 tqdm~=4.64.1
 scikit-learn
 torch_optimizer
-dgl~=1.0.1
-torch~=2.1.0
+dgl~=1.0.1 # https://data.dgl.ai/wheels/torch-2.1/cu118/repo.html
+torch~=2.1.0 # https://download.pytorch.org/whl/cu118
 transformers~=4.20.1

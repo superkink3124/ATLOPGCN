@@ -56,6 +56,7 @@ def collate_fn(batch):
     labels = [f["labels"] for f in batch]
     batch_entity_pos = [f["entity_pos"] for f in batch]
     batch_sent_pos = [f['sent_pos'] for f in batch]
+    
     hts = [f["hts"] for f in batch]
 
     graph, num_mention, num_entity, num_sent = graph_builder.create_graph(batch_entity_pos,
@@ -66,10 +67,31 @@ def collate_fn(batch):
     entity_type = torch.tensor(entity_type)
     entity_mask = torch.tensor([[1 for _ in f["entity_type"]] +
                                 [0 for _ in range(num_entity - len(f["entity_type"]))] for f in batch])
+    
+    entity_new_cr_labels = torch.tensor([[1 for _ in f["entity_type"]] +
+                                [1 for _ in range(num_entity - len(f["entity_type"]))] for f in batch])
+
+    mention_type = [[entity_type_vocab[t] for t in f["mention_type"]] +
+                   [0 for _ in range(num_mention - len(f["mention_type"]))] for f in batch]
+    mention_type = torch.tensor(mention_type)
+    mention_mask = torch.tensor([[1 for _ in f["mention_type"]] +
+                                [0 for _ in range(num_mention - len(f["mention_type"]))] for f in batch])
+
+    sent_have_one_enity = torch.tensor([f['sent_have_one_enity'] + [0 for _ in range(num_sent - len(f["sent_have_one_enity"]))] for f in batch])
+    sent_have_one_enity_mask = torch.tensor([[1 for _ in f["sent_have_one_enity"]] + 
+                                [0 for _ in range(num_sent - len(f["sent_have_one_enity"]))] for f in batch])
+
+    # print(sent_have_one_enity.size())
+    # print(sent_have_one_enity_mask)
+
     output = (input_ids, input_mask,
               batch_entity_pos, batch_sent_pos,
               cr_matrix, cr_mask,
               graph, num_mention, num_entity, num_sent,
               labels, ner_labels,
-              entity_type, entity_mask, hts)
+              entity_type, entity_mask, 
+              mention_type, mention_mask,
+              sent_have_one_enity, sent_have_one_enity_mask,
+              entity_new_cr_labels,
+              hts)
     return output

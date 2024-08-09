@@ -35,6 +35,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
         logger.info("Total steps: {}".format(total_steps))
         logger.info("Warmup steps: {}".format(warmup_steps))
         for epoch in train_iterator:
+            print(epoch)
             model.zero_grad()
             for step, batch in tqdm(enumerate(train_dataloader)):
                 model.train()
@@ -45,6 +46,9 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                     graph, num_mention, num_entity, num_sent,
                     labels, ner_labels,
                     entity_type, entity_mask,
+                    mention_type, mention_mask,
+                    sent_have_one_enity, sent_have_one_enity_mask,
+                    entity_new_cr_labels,
                     hts
                 ) = batch
                 inputs = {'input_ids': input_ids.to(args.device),
@@ -61,6 +65,11 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                           'ner_labels': ner_labels.to(args.device),
                           "entity_type": entity_type.to(args.device),
                           "entity_mask": entity_mask.to(args.device),
+                          "mention_type": mention_type.to(args.device),
+                          "mention_mask": mention_mask.to(args.device),
+                          "sent_have_one_enity": sent_have_one_enity.to(args.device),
+                          "sent_have_one_enity_mask": sent_have_one_enity_mask.to(args.device),
+                          "entity_new_cr_labels": entity_new_cr_labels.to(args.device),
                           'hts': hts,
                           }
                 outputs = model(**inputs)
@@ -75,6 +84,8 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                 # loss = (outputs["loss"] + outputs["cr_loss"]) / args.gradient_accumulation_steps
                 # loss = (outputs["loss"] + outputs["cr_loss"] + outputs["ec_loss"]) / args.gradient_accumulation_steps
                 loss = outputs["loss"] / args.gradient_accumulation_steps
+                loss += outputs["mc_loss"]
+                loss += outputs["new_cr_loss"]
                 loss.backward()
 
                 if step % args.gradient_accumulation_steps == 0:
@@ -130,24 +141,32 @@ def evaluate(args, model, features, tag="dev"):
             graph, num_mention, num_entity, num_sent,
             labels, ner_labels,
             entity_type, entity_mask,
+            mention_type, mention_mask,
+            sent_have_one_enity, sent_have_one_enity_mask,
+            entity_new_cr_labels,
             hts
         ) = batch
         inputs = {'input_ids': input_ids.to(args.device),
-                  'attention_mask': input_mask.to(args.device),
-                  'entity_pos': entity_pos,
-                  'sent_pos': sent_pos,
-                  'cr_matrix': cr_matrix.to(args.device),
-                  'cr_mask': cr_mask.to(args.device),
-                  'graph': graph.to(args.device),
-                  'num_mention': num_mention,
-                  'num_entity': num_entity,
-                  'num_sent': num_sent,
-                  'labels': labels,
-                  'ner_labels': ner_labels.to(args.device),
-                  "entity_type": entity_type.to(args.device),
-                  "entity_mask": entity_mask.to(args.device),
-                  'hts': hts,
-                  }
+                    'attention_mask': input_mask.to(args.device),
+                    'entity_pos': entity_pos,
+                    'sent_pos': sent_pos,
+                    'cr_matrix': cr_matrix.to(args.device),
+                    'cr_mask': cr_mask.to(args.device),
+                    'graph': graph.to(args.device),
+                    'num_mention': num_mention,
+                    'num_entity': num_entity,
+                    'num_sent': num_sent,
+                    'labels': labels,
+                    'ner_labels': ner_labels.to(args.device),
+                    "entity_type": entity_type.to(args.device),
+                    "entity_mask": entity_mask.to(args.device),
+                    "mention_type": mention_type.to(args.device),
+                    "mention_mask": mention_mask.to(args.device),
+                    "sent_have_one_enity": sent_have_one_enity.to(args.device),
+                    "sent_have_one_enity_mask": sent_have_one_enity_mask.to(args.device),
+                    "entity_new_cr_labels": entity_new_cr_labels.to(args.device),
+                    'hts': hts,
+                    }
 
         with torch.no_grad():
             outputs = model(**inputs)

@@ -49,9 +49,9 @@ class GraphBuilder:
         for edge_id in range(len(edge_u)):
             u.append(edge_u[edge_id])
             v.append(get_new_sent_id(edge_v[edge_id]))
-            if self.create_undirected_edges:
-                v.append(edge_u[edge_id])
-                u.append(get_new_sent_id(edge_v[edge_id]))
+            # if self.create_undirected_edges:
+            v.append(edge_u[edge_id])
+            u.append(get_new_sent_id(edge_v[edge_id]))
 
         edge_u, edge_v = mention_to_entity_edges
         for edge_id in range(len(edge_u)):

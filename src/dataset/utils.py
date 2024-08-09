@@ -159,15 +159,49 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                     continue
                 ner_labels.append('O')
 
+            mention_type = []
+            for idx_ent, entity in enumerate(entity_pos):
+                for mention in entity:
+                    mention_type.append(entity_type[idx_ent])
+
+            # print(sent_pos)
+            # print(entity_pos)
+
+            sent_to_entity = {}
+            for e_idx, entity in enumerate(entity_pos):
+                for metion_entity in entity:
+                    for s_idx, s_pos in enumerate(sent_pos):
+                        if s_pos[0] < metion_entity[0] and s_pos[1] > metion_entity[1]:
+                            if s_idx not in sent_to_entity:
+                                sent_to_entity[s_idx] = []
+                            if e_idx not in sent_to_entity[s_idx]:
+                                sent_to_entity[s_idx].append(e_idx)
+                            break
+            
+            sent_have_one_enity = []
+            for s_idx in range(len(sent_pos)):
+                if s_idx in sent_to_entity:
+                    if len(sent_to_entity[s_idx]) > 1:
+                        sent_have_one_enity.append(0)
+                    elif len(sent_to_entity[s_idx]) == 1:
+                        sent_have_one_enity.append(1)
+                else:
+                    sent_have_one_enity.append(2)
+
+            # print(sent_to_entity)
+            # print(sent_have_one_enity)
+
             if len(hts) > 0:
                 feature = {'input_ids': input_ids,
                            'entity_pos': entity_pos,
                            'entity_type': entity_type,
+                           'mention_type': mention_type,
                            'ner_labels': ner_labels,
                            'labels': relations,
                            'hts': hts,
                            'title': pmid,
-                           'sent_pos': sent_pos
+                           'sent_pos': sent_pos,
+                           'sent_have_one_enity': sent_have_one_enity
                            }
                 features.append(feature)
     print("Number of documents: {}.".format(len(features)))
