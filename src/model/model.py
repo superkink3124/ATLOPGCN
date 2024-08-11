@@ -11,6 +11,8 @@ from model.GNN import GNN
 from opt_einsum import contract
 from model.losses import ATLoss
 
+from dataset.utils import MAX_DISTANCE
+
 
 def focal_loss(pred, target, mask, alpha=0.25, gamma=2.0):
     """
@@ -141,6 +143,9 @@ class ATLOPGCN(nn.Module):
         self.mention_classify_loss_func = nn.CrossEntropyLoss(reduction='none')
         self.new_cr_classifier = nn.Linear(bert_config.hidden_size + config.gnn.node_type_embedding, 3)
         self.new_cr_loss_func = nn.CrossEntropyLoss(reduction='none')
+        distance_embedding_dim = 30
+        self.mention_distance_embedding = nn.Embedding(num_embeddings=MAX_DISTANCE + 1, embedding_dim=distance_embedding_dim)
+        self.mention_embed_layer = nn.Linear(bert_config.hidden_size + distance_embedding_dim, bert_config.hidden_size)
 
         self.loss_fnt = ATLoss()
 
@@ -246,10 +251,13 @@ class ATLOPGCN(nn.Module):
                 entity_type=None, entity_mask=None,
                 mention_type=None, mention_mask=None,
                 sent_have_one_enity=None, sent_have_one_enity_mask=None,
-                entity_new_cr_labels=None,
+                entity_new_cr_labels=None, nearest_mention=None,
                 hts=None):
         sequence_output, attention = self.encode(input_ids, attention_mask)
         mention_embed = self.get_mention_embed(sequence_output, entity_pos, num_mention)
+        nearest_mention_embed = self.mention_distance_embedding(nearest_mention)
+        mention_embed = self.mention_embed_layer(torch.concat((mention_embed, nearest_mention_embed), dim=2))
+
         entity_embed = self.get_entity_embed(sequence_output, entity_pos, num_entity)
         sent_embed = self.get_sent_embed(sequence_output, sent_pos, num_sent)
         entity_hidden_state, mention_hidden_state, sent_hidden_state = self.gnn([mention_embed, entity_embed, sent_embed, graph])

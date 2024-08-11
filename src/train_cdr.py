@@ -48,7 +48,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                     entity_type, entity_mask,
                     mention_type, mention_mask,
                     sent_have_one_enity, sent_have_one_enity_mask,
-                    entity_new_cr_labels,
+                    entity_new_cr_labels, nearest_mention,
                     hts
                 ) = batch
                 inputs = {'input_ids': input_ids.to(args.device),
@@ -70,6 +70,7 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                           "sent_have_one_enity": sent_have_one_enity.to(args.device),
                           "sent_have_one_enity_mask": sent_have_one_enity_mask.to(args.device),
                           "entity_new_cr_labels": entity_new_cr_labels.to(args.device),
+                          "nearest_mention": nearest_mention.to(args.device),
                           'hts': hts,
                           }
                 outputs = model(**inputs)
@@ -107,8 +108,8 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
                 #             torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
                 #     else:
                 #         torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
-                    # wandb.log(dev_output, step=num_steps)
-                    # wandb.log(test_output, step=num_steps)
+                # wandb.log(dev_output, step=num_steps)
+                # wandb.log(test_output, step=num_steps)
         os.makedirs(os.path.join(experiment_dir, 'model'))
         torch.save(model.state_dict(), os.path.join(experiment_dir, 'model', 'model.pt'))
         return num_steps
@@ -129,8 +130,8 @@ def train(args, model, train_features, dev_features, test_features, experiment_d
 
 
 def evaluate(args, model, features, tag="dev"):
-
-    dataloader = DataLoader(features, batch_size=args.test_batch_size, shuffle=False, collate_fn=collate_fn, drop_last=False)
+    dataloader = DataLoader(features, batch_size=args.test_batch_size, shuffle=False, collate_fn=collate_fn,
+                            drop_last=False)
     preds, golds = [], []
     for batch in dataloader:
         model.eval()
@@ -143,30 +144,31 @@ def evaluate(args, model, features, tag="dev"):
             entity_type, entity_mask,
             mention_type, mention_mask,
             sent_have_one_enity, sent_have_one_enity_mask,
-            entity_new_cr_labels,
+            entity_new_cr_labels, nearest_mention,
             hts
         ) = batch
         inputs = {'input_ids': input_ids.to(args.device),
-                    'attention_mask': input_mask.to(args.device),
-                    'entity_pos': entity_pos,
-                    'sent_pos': sent_pos,
-                    'cr_matrix': cr_matrix.to(args.device),
-                    'cr_mask': cr_mask.to(args.device),
-                    'graph': graph.to(args.device),
-                    'num_mention': num_mention,
-                    'num_entity': num_entity,
-                    'num_sent': num_sent,
-                    'labels': labels,
-                    'ner_labels': ner_labels.to(args.device),
-                    "entity_type": entity_type.to(args.device),
-                    "entity_mask": entity_mask.to(args.device),
-                    "mention_type": mention_type.to(args.device),
-                    "mention_mask": mention_mask.to(args.device),
-                    "sent_have_one_enity": sent_have_one_enity.to(args.device),
-                    "sent_have_one_enity_mask": sent_have_one_enity_mask.to(args.device),
-                    "entity_new_cr_labels": entity_new_cr_labels.to(args.device),
-                    'hts': hts,
-                    }
+                  'attention_mask': input_mask.to(args.device),
+                  'entity_pos': entity_pos,
+                  'sent_pos': sent_pos,
+                  'cr_matrix': cr_matrix.to(args.device),
+                  'cr_mask': cr_mask.to(args.device),
+                  'graph': graph.to(args.device),
+                  'num_mention': num_mention,
+                  'num_entity': num_entity,
+                  'num_sent': num_sent,
+                  'labels': labels,
+                  'ner_labels': ner_labels.to(args.device),
+                  "entity_type": entity_type.to(args.device),
+                  "entity_mask": entity_mask.to(args.device),
+                  "mention_type": mention_type.to(args.device),
+                  "mention_mask": mention_mask.to(args.device),
+                  "sent_have_one_enity": sent_have_one_enity.to(args.device),
+                  "sent_have_one_enity_mask": sent_have_one_enity_mask.to(args.device),
+                  "entity_new_cr_labels": entity_new_cr_labels.to(args.device),
+                  "nearest_mention": nearest_mention.to(args.device),
+                  'hts': hts,
+                  }
 
         with torch.no_grad():
             outputs = model(**inputs)

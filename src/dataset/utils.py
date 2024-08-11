@@ -6,7 +6,7 @@ from typing import List, Any
 docred_rel2id = json.load(open('../dataset/meta/rel2id.json', 'r'))
 cdr_rel2id = {'1:NR:2': 0, '1:CID:2': 1}
 gda_rel2id = {'1:NR:2': 0, '1:GDA:2': 1}
-
+MAX_DISTANCE = 1024
 
 def chunks(l, n):
     res = []
@@ -190,7 +190,17 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
 
             # print(sent_to_entity)
             # print(sent_have_one_enity)
-
+            nearest_mention = []
+            for idx, pos_arr in enumerate(entity_pos):
+                cur_entity_type = entity_type[idx]
+                for pos in pos_arr:
+                    cur_min_distance = MAX_DISTANCE
+                    for idx2, pos_arr2 in enumerate(entity_pos):
+                        if entity_type[idx2] == cur_entity_type:
+                            continue
+                        for pos2 in pos_arr2:
+                            cur_min_distance = min(cur_min_distance, abs(pos[0] - pos2[0]))
+                    nearest_mention.append(cur_min_distance)
             if len(hts) > 0:
                 feature = {'input_ids': input_ids,
                            'entity_pos': entity_pos,
@@ -201,7 +211,8 @@ def read_cdr(file_in, tokenizer, max_seq_length=1024) -> List[Any]:
                            'hts': hts,
                            'title': pmid,
                            'sent_pos': sent_pos,
-                           'sent_have_one_enity': sent_have_one_enity
+                           'sent_have_one_enity': sent_have_one_enity,
+                           'nearest_mention': nearest_mention,
                            }
                 features.append(feature)
     print("Number of documents: {}.".format(len(features)))
